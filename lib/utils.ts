@@ -5,10 +5,15 @@ import type { QuotationItem } from "@/types";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+let baseCurrency = "USD";
+export function setBaseCurrency(currency: string) {
+  baseCurrency = currency;
+}
 export const money = (value: number, compact = false) =>
-  "PKR " +
+  baseCurrency +
+  " " +
   new Intl.NumberFormat("en-PK", {
-    maximumFractionDigits: compact ? 1 : 0,
+    maximumFractionDigits: compact ? 1 : 2,
     notation: compact ? "compact" : "standard",
   }).format(value || 0);
 export const dateLabel = (value: string) => {
@@ -32,7 +37,12 @@ export function totals(items: QuotationItem[]) {
       s + (i.quantity * i.unitPrice * (1 - i.discount / 100) * i.tax) / 100,
     0,
   );
-  return { subtotal, discount, tax, total: subtotal - discount + tax };
+  return {
+    subtotal: roundMoney(subtotal),
+    discount: roundMoney(discount),
+    tax: roundMoney(tax),
+    total: roundMoney(subtotal - discount + tax),
+  };
 }
 export function exportCSV(name: string, rows: Record<string, unknown>[]) {
   const keys = [...new Set(rows.flatMap(Object.keys))];
@@ -56,3 +66,18 @@ export function download(name: string, body: string, type: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+export const today = (timeZone = "UTC") =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+export function daysFromNow(days: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+export const roundMoney = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;

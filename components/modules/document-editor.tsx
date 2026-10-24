@@ -18,8 +18,10 @@ import {
   uid,
   convertQuotation,
   purchaseTotal,
+  getMember,
+  getRevision,
 } from "@/lib/services/repository";
-import { totals, money } from "@/lib/utils";
+import { totals, money, today, daysFromNow } from "@/lib/utils";
 import { PageHeading, Badge, Modal } from "@/components/common/ui";
 import { moduleFor, recordPath } from "@/lib/constants/modules";
 import type { QuotationItem, Quotation, Invoice, PurchaseOrder } from "@/types";
@@ -44,22 +46,23 @@ export function DocumentEditor({
   customerId?: string;
 }) {
   const db = useDatabase();
+  const [editRevision] = useState(getRevision);
   const router = useRouter();
   const existing = db[kind].find((x) => x.id === id);
   const config = moduleFor(kind);
   const [header, setHeader] = useState<Record<string, string>>(() => ({
     name:
       existing?.name ||
-      `${kind === "quotations" ? "QT-2026-" : kind === "invoices" ? "INV-" : "PO-"}${kind === "quotations" ? 431 + db.quotations.length : kind === "invoices" ? 8891 + db.invoices.length : 3021 + db.purchaseOrders.length}`,
+      `${kind === "quotations" ? db.settings.quotationPrefix : kind === "invoices" ? db.settings.invoicePrefix : "PO-"}${db[kind].length + 1}`,
     organizationId: customerId || "",
     contactId: "",
     supplierId: "",
-    date: "2026-09-18",
-    validUntil: "2026-10-18",
-    dueDate: "2026-10-18",
-    expectedArrival: "2026-10-18",
-    owner: "Ahmed Khan",
-    currency: "PKR",
+    date: today(db.settings.timezone),
+    validUntil: daysFromNow(30),
+    dueDate: daysFromNow(30),
+    expectedArrival: daysFromNow(30),
+    owner: getMember().name,
+    currency: db.settings.currency,
     paymentTerms: "Net 30",
     deliveryTerms: "4–6 weeks after purchase order",
     warranty: "12 months",
@@ -88,13 +91,14 @@ export function DocumentEditor({
           quantity: 1,
           unitPrice: 0,
           discount: 0,
-          tax: 18,
+          tax: Number(db.settings.tax || 0),
         },
       ],
     ),
   );
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
   const total = totals(items);
   const costKeys = ["freight", "insurance", "customs", "clearing", "other"];
   const landed = purchaseTotal(
@@ -132,7 +136,9 @@ export function DocumentEditor({
     if (kind === "quotations" && header.validUntil < header.date)
       throw new Error("Validity cannot precede quotation date.");
   };
-  const save = (status: string, convert = false) => {
+  const save = async (status: string, convert = false) => {
+    if (saving) return;
+    setSaving(true);
     try {
       validate();
       if (
@@ -151,33 +157,42 @@ export function DocumentEditor({
       };
       if (kind === "quotations") {
         const record = common as unknown as Quotation;
-        if (existing) repository("quotations").update(recordId, record);
-        else repository("quotations").create(record);
+        if (existing)
+          await repository("quotations").update(recordId, record, editRevision);
+        else await repository("quotations").create(record, editRevision);
       } else if (kind === "invoices") {
         const record = {
           ...common,
           orderId: existing && "orderId" in existing ? existing.orderId : "",
         } as unknown as Invoice;
-        if (existing) repository("invoices").update(recordId, record);
-        else repository("invoices").create(record);
+        if (existing)
+          await repository("invoices").update(recordId, record, editRevision);
+        else await repository("invoices").create(record, editRevision);
       } else {
         const record = {
           ...common,
           exchangeRate: Number(header.exchangeRate),
           ...Object.fromEntries(costKeys.map((k) => [k, Number(header[k])])),
         } as unknown as PurchaseOrder;
-        if (existing) repository("purchaseOrders").update(recordId, record);
-        else repository("purchaseOrders").create(record);
+        if (existing)
+          await repository("purchaseOrders").update(
+            recordId,
+            record,
+            editRevision,
+          );
+        else await repository("purchaseOrders").create(record, editRevision);
       }
       toast.success(
         `${config.singular} ${status === "Draft" ? "saved as draft" : "saved"}`,
       );
       if (convert) {
-        const orderId = convertQuotation(recordId);
+        const orderId = await convertQuotation(recordId);
         router.push(recordPath("orders", orderId));
       } else router.push(recordPath(kind, recordId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save.");
+    } finally {
+      setSaving(false);
     }
   };
   const field = (key: string, label: string, type = "text") => (
@@ -303,8 +318,15 @@ export function DocumentEditor({
                     onChange={(e) => change("currency", e.target.value)}
                   >
                     {(kind === "purchaseOrders"
-                      ? ["PKR", "USD", "EUR"]
-                      : ["PKR"]
+                      ? [
+                          ...new Set([
+                            db.settings.currency,
+                            "USD",
+                            "EUR",
+                            "GBP",
+                          ]),
+                        ]
+                      : [db.settings.currency]
                     ).map((c) => (
                       <option key={c}>{c}</option>
                     ))}
@@ -313,7 +335,11 @@ export function DocumentEditor({
               )}
               {kind === "purchaseOrders" && (
                 <>
-                  {field("exchangeRate", "PKR exchange rate", "number")}
+                  {field(
+                    "exchangeRate",
+                    "Base-currency exchange rate",
+                    "number",
+                  )}
                   {field("shippingMethod", "Shipping method")}
                 </>
               )}
@@ -402,7 +428,8 @@ export function DocumentEditor({
                         </td>
                       ))}
                       <td className="tabular">
-                        {kind === "purchaseOrders" && header.currency !== "PKR"
+                        {kind === "purchaseOrders" &&
+                        header.currency !== db.settings.currency
                           ? `${header.currency} ${totals([item]).total.toLocaleString()}`
                           : money(totals([item]).total)}
                       </td>
@@ -433,7 +460,7 @@ export function DocumentEditor({
                     quantity: 1,
                     unitPrice: 0,
                     discount: 0,
-                    tax: 18,
+                    tax: Number(db.settings.tax || 0),
                   },
                 ])
               }
@@ -494,7 +521,7 @@ export function DocumentEditor({
             ))}
             {kind === "purchaseOrders" && (
               <div className="landed-fields">
-                <h3>Landed costs · PKR</h3>
+                <h3>Landed costs · {db.settings.currency}</h3>
                 {costKeys.map((key) =>
                   field(
                     key,
@@ -527,12 +554,17 @@ export function DocumentEditor({
                 {error}
               </div>
             )}
-            <button className="btn primary" onClick={() => save("Draft")}>
+            <button
+              className="btn primary"
+              disabled={saving}
+              onClick={() => save("Draft")}
+            >
               <Save size={16} />
               Save draft
             </button>
             <button
               className="btn"
+              disabled={saving}
               onClick={() =>
                 save(kind === "purchaseOrders" ? "Awaiting Approval" : "Sent")
               }
@@ -543,7 +575,11 @@ export function DocumentEditor({
                 : "Mark as sent"}
             </button>
             {kind === "quotations" && (
-              <button className="btn" onClick={() => save("Accepted", true)}>
+              <button
+                className="btn"
+                disabled={saving}
+                onClick={() => save("Accepted", true)}
+              >
                 Convert to sales order
               </button>
             )}
@@ -572,8 +608,8 @@ export function DocumentEditor({
       >
         <div className="print-document">
           <div className="print-brand">
-            <strong>AMSS One</strong>
-            <span>AM Sales & Services · Pakistan</span>
+            <strong>AGI One</strong>
+            <span>{db.settings.company}</span>
           </div>
           <h1>{header.name}</h1>
           <p>
@@ -615,7 +651,7 @@ export function DocumentEditor({
           </div>
           <p>{header.paymentTerms || header.terms}</p>
           <p>{header.notes}</p>
-          <small>Frontend demo document · For demonstration only</small>
+          <small>Generated by AGI One</small>
         </div>
         <div className="modal-footer no-print">
           <button className="btn" onClick={() => setPreview(false)}>

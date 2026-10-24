@@ -9,33 +9,23 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
-export const trend = [
-  { month: "Apr", revenue: 25.4, collections: 18.2 },
-  { month: "May", revenue: 31.8, collections: 23.1 },
-  { month: "Jun", revenue: 28.6, collections: 20.8 },
-  { month: "Jul", revenue: 39.2, collections: 27.4 },
-  { month: "Aug", revenue: 35.6, collections: 24.8 },
-  { month: "Sep", revenue: 48.2, collections: 29.1 },
-];
-const colors = ["#3565df", "#7192ee", "#a9bdf5", "#d3defa"];
-export function RevenueChart({ factor = 1 }: { factor?: number }) {
+export function RevenueChart({
+  data,
+  currency,
+}: {
+  data: { month: string; revenue: number; collections: number }[];
+  currency: string;
+}) {
   return (
     <div
       className="revenue-chart"
       role="img"
-      aria-label="Revenue and collections trend, April to September 2026"
+      aria-label="Issued sales and collections for the selected period"
     >
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <AreaChart
-          data={trend.map((d) => ({
-            ...d,
-            revenue: +(d.revenue * factor).toFixed(1),
-            collections: +(d.collections * factor).toFixed(1),
-          }))}
+          data={data}
           margin={{ top: 15, right: 10, bottom: 0, left: -22 }}
         >
           <defs>
@@ -60,7 +50,7 @@ export function RevenueChart({ factor = 1 }: { factor?: number }) {
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 11, fill: "#8993a4" }}
-            tickFormatter={(v) => `${v}M`}
+            tickFormatter={(v) => String(v)}
           />
           <Tooltip
             contentStyle={{
@@ -68,7 +58,7 @@ export function RevenueChart({ factor = 1 }: { factor?: number }) {
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v) => `PKR ${v}M`}
+            formatter={(v) => `${currency} ${v}`}
           />
           <Area
             isAnimationActive={false}
@@ -164,54 +154,6 @@ export function MiniBar({
           />
         </BarChart>
       </ResponsiveContainer>
-    </div>
-  );
-}
-export function CategoryChart() {
-  const data = [
-    { name: "Instruments", value: 52 },
-    { name: "Reagents", value: 28 },
-    { name: "Consumables", value: 13 },
-    { name: "Spare parts", value: 7 },
-  ];
-  return (
-    <div className="category-chart">
-      <div className="donut">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <PieChart>
-            <Pie
-              isAnimationActive={false}
-              data={data}
-              dataKey="value"
-              innerRadius={56}
-              outerRadius={74}
-              paddingAngle={3}
-              stroke="none"
-            >
-              {data.map((d, i) => (
-                <Cell fill={colors[i]} key={d.name} />
-              ))}
-            </Pie>
-            <Tooltip formatter={(v) => `${v}%`} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="donut-center">
-          <small>Total sales</small>
-          <strong>48.2M</strong>
-          <span>PKR</span>
-        </div>
-      </div>
-      <div className="category-legend">
-        {data.map((d, i) => (
-          <div key={d.name}>
-            <span>
-              <i style={{ background: colors[i] }} />
-              {d.name}
-            </span>
-            <strong>{d.value}%</strong>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

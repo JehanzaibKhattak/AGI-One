@@ -1,4 +1,6 @@
 "use client";
+import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -45,7 +47,11 @@ import {
 } from "lucide-react";
 import { Modal, Menu, MenuItem, Badge, Empty } from "@/components/common/ui";
 import { useDatabase, DataProvider } from "@/lib/services/provider";
-import { commit } from "@/lib/services/repository";
+import {
+  markNotifications,
+  getMember,
+  clearWorkspace,
+} from "@/lib/services/repository";
 import {
   modules,
   moduleFor,
@@ -54,6 +60,7 @@ import {
 } from "@/lib/constants/modules";
 import { RecordForm } from "@/components/forms/record-form";
 import type { Collection } from "@/types";
+import { dateLabel } from "@/lib/utils";
 import { Toaster } from "sonner";
 const groups = [
   { label: "WORKSPACE", items: [["Dashboard", "/dashboard", LayoutDashboard]] },
@@ -120,7 +127,6 @@ const quickKeys: Collection[] = [
   "contacts",
   "opportunities",
   "quotations",
-  "orders",
   "purchaseOrders",
   "tickets",
   "invoices",
@@ -139,11 +145,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const [category, setCategory] = useState("All");
   const [help, setHelp] = useState(false);
   const [create, setCreate] = useState<Collection | null>(null);
-  const [authenticated, setAuthenticated] = useState(false);
+
   useEffect(() => {
-    if (sessionStorage.getItem("amss-session"))
-      queueMicrotask(() => setAuthenticated(true));
-    else router.replace("/login");
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -199,10 +202,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         onClick={() => setMobile(false)}
       >
         <span className="brand-icon">
-          a<span>m</span>
+          a<span>1</span>
         </span>
         <span className="brand-name">
-          AMSS <b>One</b>
+          AGI <b>One</b>
           <small>Business Operations</small>
         </span>
       </Link>
@@ -213,9 +216,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           setMobile(false);
         }}
       >
-        <span className="workspace-avatar">AM</span>
+        <span className="workspace-avatar">A1</span>
         <span>
-          AM Sales & Services<small>Pakistan workspace</small>
+          {db.settings.company}
+          <small>Your workspace</small>
         </span>
         <ChevronDown size={14} />
       </button>
@@ -268,7 +272,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       </div>
     </>
   );
-  if (!authenticated)
+  if (!db.settings.company)
     return (
       <div className="workspace-loading">
         <div className="brand-icon">am</div>
@@ -284,7 +288,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       <Modal
         open={mobile}
         onOpenChange={setMobile}
-        title="AMSS One navigation"
+        title="AGI One navigation"
         drawer
       >
         <div className="mobile-nav">{nav}</div>
@@ -318,25 +322,27 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               <span>Search anything…</span>
               <kbd>⌘ K</kbd>
             </button>
-            <Menu
-              className="btn primary quick-create"
-              label={
-                <>
-                  <Plus size={16} />
-                  <span>New</span>
-                  <ChevronDown size={13} />
-                </>
-              }
-            >
-              {quickKeys.map((key) => (
-                <MenuItem key={key} onClick={() => openCreate(key)}>
-                  <Plus size={14} />
-                  {key === "payments"
-                    ? "Receive payment"
-                    : `New ${moduleFor(key).singular.toLowerCase()}`}
-                </MenuItem>
-              ))}
-            </Menu>
+            {getMember().role !== "viewer" && (
+              <Menu
+                className="btn primary quick-create"
+                label={
+                  <>
+                    <Plus size={16} />
+                    <span>New</span>
+                    <ChevronDown size={13} />
+                  </>
+                }
+              >
+                {quickKeys.map((key) => (
+                  <MenuItem key={key} onClick={() => openCreate(key)}>
+                    <Plus size={14} />
+                    {key === "payments"
+                      ? "Receive payment"
+                      : `New ${moduleFor(key).singular.toLowerCase()}`}
+                  </MenuItem>
+                ))}
+              </Menu>
+            )}
             <div className="top-divider" />
             <button
               className="icon-btn notification-btn"
@@ -357,21 +363,25 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               className="profile-button"
               label={
                 <>
-                  <span className="avatar admin">AK</span>
+                  <span className="avatar admin">
+                    {getMember().name.slice(0, 2).toUpperCase()}
+                  </span>
                   <ChevronDown size={13} />
                 </>
               }
             >
               <MenuItem onClick={() => router.push("/settings/users")}>
-                Admin · Super Admin
+                {getMember().name} · {getMember().role}
               </MenuItem>
               <MenuItem onClick={() => router.push("/settings")}>
                 Workspace settings
               </MenuItem>
               <MenuItem
-                onClick={() => {
-                  sessionStorage.removeItem("amss-session");
-                  router.push("/login");
+                onClick={async () => {
+                  await authClient.signOut();
+                  clearWorkspace();
+                  router.replace("/login");
+                  router.refresh();
                 }}
               >
                 <LogOut size={15} />
@@ -385,10 +395,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </main>
         <footer className="workspace-footer">
           <span>
-            AMSS One <span className="muted">/</span> Business, connected.
+            AGI One <span className="muted">/</span> Business, connected.
           </span>
           <span>
-            Pakistan workspace <span className="live-dot" /> Demo environment
+            {db.settings.company} <span className="live-dot" />{" "}
+            {getMember().role} access
           </span>
         </footer>
       </div>
@@ -472,9 +483,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           <button
             className="text-btn"
             onClick={() =>
-              commit((d) => {
-                d.notifications.forEach((n) => (n.read = true));
-              })
+              markNotifications().catch((e) => toast.error(e.message))
             }
           >
             <CheckCheck size={15} />
@@ -494,15 +503,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 <Link
                   href={n.href}
                   onClick={() => {
-                    commit((d) => {
-                      d.notifications.find((x) => x.id === n.id)!.read = true;
-                    });
+                    void markNotifications(n.id).catch((e) =>
+                      toast.error(e.message),
+                    );
                     setNotifications(false);
                   }}
                 >
                   {n.name}
                 </Link>
-                <small>18 Sep 2026 · Workspace alert</small>
+                <small>{dateLabel(n.createdAt)} · Workspace alert</small>
               </div>
               <button
                 className="icon-btn"
@@ -510,9 +519,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 aria-label={`Mark ${n.name} as read`}
                 disabled={n.read}
                 onClick={() =>
-                  commit((d) => {
-                    d.notifications.find((x) => x.id === n.id)!.read = true;
-                  })
+                  markNotifications(n.id).catch((e) => toast.error(e.message))
                 }
               >
                 <Check size={16} />
@@ -523,7 +530,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       <Modal
         open={help}
         onOpenChange={setHelp}
-        title="Welcome to AMSS One"
+        title="Welcome to AGI One"
         description="Your business operations, connected."
       >
         <div className="help-content">
@@ -538,9 +545,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             forward.
           </p>
           <p>
-            Changes persist in this browser. This is a frontend demonstration
-            with fictional business data; sign-in and role permissions are
-            simulated.
+            Your records belong to your team workspace. Access is checked on the
+            server. Advanced integrations are under development.
           </p>
           <Link
             className="btn primary"

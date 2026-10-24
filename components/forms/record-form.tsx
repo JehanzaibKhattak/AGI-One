@@ -4,9 +4,15 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useDatabase } from "@/lib/services/provider";
-import { repository, receivePayment, uid } from "@/lib/services/repository";
+import {
+  repository,
+  receivePayment,
+  uid,
+  getMember,
+  getRevision,
+} from "@/lib/services/repository";
 import { type Module, type Field } from "@/lib/constants/modules";
-import { totals } from "@/lib/utils";
+import { totals, today } from "@/lib/utils";
 import { Modal } from "@/components/common/ui";
 import type { BaseRecord, Entity, Collection } from "@/types";
 function fieldSchema(field: Field) {
@@ -39,11 +45,16 @@ export function RecordForm({
 }) {
   const db = useDatabase();
   const [error, setError] = useState("");
+  const [editRevision] = useState(getRevision);
   const fields = module.fields;
   const initial: Record<string, unknown> = Object.fromEntries(
     fields.map((f) => [
       f.key,
-      f.default ??
+      (["owner", "receivedBy", "requestedBy"].includes(f.key)
+        ? getMember().name
+        : f.type === "date"
+          ? today(db.settings.timezone)
+          : f.default) ??
         (f.type === "checkbox" ? false : f.type === "number" ? 0 : ""),
     ]),
   );
@@ -121,9 +132,10 @@ export function RecordForm({
       }
       if (module.key === "payments") {
         if (record) throw new Error("Posted receipts cannot be edited.");
-        receivePayment(data as Entity<"payments">);
-      } else if (record) repository(module.key).update(record.id, data);
-      else repository<Collection>(module.key).create(data);
+        await receivePayment(data as Entity<"payments">);
+      } else if (record)
+        await repository(module.key).update(record.id, data, editRevision);
+      else await repository<Collection>(module.key).create(data, editRevision);
       toast.success(`${module.singular} ${record ? "updated" : "created"}`);
       onClose();
     } catch (e) {
@@ -137,7 +149,7 @@ export function RecordForm({
         if (!v) onClose();
       }}
       title={`${record ? "Edit" : "New"} ${module.singular.toLowerCase()}`}
-      description="Changes are saved to your demo workspace."
+      description="Changes are saved securely to your team workspace."
       wide
     >
       <form onSubmit={submit}>
@@ -198,16 +210,17 @@ export function RecordForm({
               </label>
             );
           })}
-          {module.statuses.length > 1 && (
-            <label className="field">
-              <span>Status</span>
-              <select {...form.register("status")}>
-                {module.statuses.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          {module.statuses.length > 1 &&
+            !["orders", "purchaseOrders", "invoices"].includes(module.key) && (
+              <label className="field">
+                <span>Status</span>
+                <select {...form.register("status")}>
+                  {module.statuses.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+            )}
         </div>
         {error && (
           <div className="form-error" role="alert">

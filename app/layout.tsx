@@ -3,11 +3,11 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 export const metadata: Metadata = {
   title: {
-    default: "AMSS One · Business Operations",
-    template: "%s · AMSS One",
+    default: "AGI One · Business Operations",
+    template: "%s · AGI One",
   },
   description:
-    "A connected business workspace for AM Sales & Services. CRM, sales, inventory, field service, and finance.",
+    "AGI One connects customer relationships, sales, service and business operations.",
 };
 export default function RootLayout({
   children,

@@ -3908,7 +3908,7 @@ td input[type="checkbox"] {
     min-height: 100dvh;
   }
   .login-form-panel:before {
-    content: "AMSS One";
+    content: "AGI One";
     font-size: 23px;
     color: #436aab;
     letter-spacing: -1px;
@@ -4108,5 +4108,47 @@ td input[type="checkbox"] {
   body [role="dialog"] .print-document,
   body [role="dialog"] .print-document * {
     visibility: visible !important;
+  }
+}
+
+/* Shared workspace cards and live activity rows. */
+.workspace-card {
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.workspace-card > h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.workspace-card > p {
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 8px 0 18px;
+}
+.workspace-card > .form-grid {
+  margin: 0;
+}
+.workspace-event {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.workspace-event:last-child {
+  border-bottom: 0;
+}
+.workspace-event strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.workspace-event p {
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .workspace-card {
+    padding: 18px;
+  }
+  .workspace-event {
+    padding: 14px 18px;
   }
 }

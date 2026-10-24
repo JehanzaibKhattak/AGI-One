@@ -1,40 +1,63 @@
 "use client";
-import { useEffect, useSyncExternalStore, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   getSnapshot,
   getServerSnapshot,
   subscribe,
   initialize,
-  resetDemo,
+  WorkspaceAccessError,
 } from "./repository";
 export function useDatabase() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [error, setError] = useState("");
+  const router = useRouter();
+  const [state, setState] = useState({ loaded: false, error: "" });
   useEffect(() => {
-    try {
-      initialize();
-    } catch (e) {
-      queueMicrotask(() =>
-        setError(e instanceof Error ? e.message : "Unable to load demo data."),
-      );
-    }
-  }, []);
-  if (error)
+    let active = true;
+    const load = () =>
+      initialize()
+        .then((loaded) => {
+          if (active && loaded) setState({ loaded: true, error: "" });
+        })
+        .catch((error: Error) => {
+          if (active) {
+            if (error instanceof WorkspaceAccessError)
+              router.replace(error.destination);
+            else
+              setState((previous) => ({ ...previous, error: error.message }));
+          }
+        });
+    void load();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [router]);
+  if (state.error)
     return (
-      <div className="error-state">
+      <div className="error-state" role="alert">
         <h1>Couldn’t load your workspace</h1>
-        <p>{error}</p>
+        <p>{state.error}</p>
         <button
           className="btn primary"
-          onClick={() => {
-            resetDemo();
-            setError("");
-          }}
+          onClick={() => window.location.reload()}
         >
-          Reset saved demo data
+          Try again
         </button>
+      </div>
+    );
+  if (!state.loaded)
+    return (
+      <div className="error-state" role="status">
+        Opening your workspace…
       </div>
     );
   return children;

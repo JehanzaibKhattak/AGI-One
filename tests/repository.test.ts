@@ -1,154 +1,227 @@
-import { beforeEach, test } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createEmptyDatabase } from "../lib/database/empty";
 import {
-  getSnapshot,
-  resetDemo,
-  transferStock,
-  receivePayment,
+  createEngine,
   invoiceBalance,
-  convertQuotation,
-  orderAction,
-  repository,
-  ticketAction,
-  approveRequest,
-  purchaseTotal,
-} from "../lib/services/repository";
+  customerBalance,
+} from "../lib/services/engine";
+import { executeCommand } from "../lib/server/commands";
 import { totals } from "../lib/utils";
-beforeEach(() => resetDemo());
-test("line-item tax applies after discounts and landed costs convert currency once", () => {
-  const items = [
-    {
-      productId: "prd-1",
-      description: "Instrument",
-      quantity: 2,
-      unitPrice: 100,
-      discount: 10,
-      tax: 18,
-    },
-  ];
-  assert.deepEqual(totals(items), {
-    subtotal: 200,
-    discount: 20,
-    tax: 32.4,
-    total: 212.4,
-  });
-  assert.equal(purchaseTotal(items, 280, [1000, 200]), 60672);
+import { fixture } from "./fixtures";
+
+test("new workspaces contain no business records", () => {
+  const db = createEmptyDatabase();
+  for (const [key, value] of Object.entries(db))
+    if (key !== "settings") assert.deepEqual(value, []);
+  assert.equal(db.settings.currency, "USD");
 });
-test("warehouse transfer preserves total quantity and reserved stock", () => {
-  const before = getSnapshot();
-  const qty = before.stock
-    .filter((s) => s.productId === "prd-3")
-    .reduce((s, r) => s + r.quantity, 0);
-  transferStock("wh-1", "wh-2", "prd-3", 2, "TEST-TRANSFER", "Replenishment");
-  const after = getSnapshot();
-  assert.equal(
-    after.stock
-      .filter((s) => s.productId === "prd-3")
-      .reduce((s, r) => s + r.quantity, 0),
-    qty,
+test("discounts apply before tax and monetary totals round to cents", () => {
+  assert.deepEqual(
+    totals([
+      {
+        productId: "x",
+        description: "x",
+        quantity: 2,
+        unitPrice: 100,
+        discount: 10,
+        tax: 18,
+      },
+    ]),
+    { subtotal: 200, discount: 20, tax: 32.4, total: 212.4 },
   );
   assert.equal(
-    after.stock.find((s) => s.productId === "prd-3" && s.warehouseId === "wh-1")
-      ?.reserved,
-    2,
+    totals([
+      {
+        productId: "x",
+        description: "x",
+        quantity: 3,
+        unitPrice: 0.1,
+        discount: 0,
+        tax: 0,
+      },
+    ]).total,
+    0.3,
   );
-  assert.equal(after.transactions[0].reference, "TEST-TRANSFER");
 });
-test("invalid transfers are atomic", () => {
-  const before = getSnapshot();
-  assert.throws(
-    () => transferStock("wh-1", "wh-1", "prd-1", 1, "", ""),
-    /different/,
-  );
-  assert.throws(
-    () => transferStock("wh-1", "wh-2", "prd-1", 999, "", ""),
-    /Insufficient/,
-  );
-  assert.equal(getSnapshot(), before);
+test("draft and cancelled invoices do not create receivables", () => {
+  const db = fixture();
+  db.invoices[0].status = "Draft";
+  assert.equal(invoiceBalance(db, "invoice"), 0);
+  assert.equal(customerBalance(db, "customer"), 0);
+  db.invoices[0].status = "Cancelled";
+  assert.equal(invoiceBalance(db, "invoice"), 0);
 });
-test("payment belongs to invoice customer and cannot overpay", () => {
-  const invoice = getSnapshot().invoices[0];
-  const balance = invoiceBalance(getSnapshot(), invoice.id);
+test("payment ownership, finite values, balance and duplicate receipts are enforced", () => {
+  const engine = createEngine(fixture(), "Test actor");
   const payment = {
-    id: "test-pay",
-    name: "REC-TEST",
+    id: "payment",
+    name: "REC-1",
     status: "Received",
-    createdAt: "2026-09-18",
-    organizationId: invoice.organizationId,
-    invoiceId: invoice.id,
-    amount: balance,
-    date: "2026-09-18",
-    bankId: "bank-1",
+    createdAt: new Date().toISOString(),
+    organizationId: "customer",
+    invoiceId: "invoice",
+    amount: 200,
+    date: "2026-01-01",
+    bankId: "bank",
     method: "Bank Transfer",
-    reference: "test",
-    receivedBy: "Admin",
+    reference: "ref",
+    receivedBy: "Test actor",
   };
   assert.throws(
-    () => receivePayment({ ...payment, organizationId: "org-12" }),
+    () => engine.receivePayment({ ...payment, organizationId: "other" }),
     /belonging/,
   );
   assert.throws(
-    () => receivePayment({ ...payment, amount: balance + 1 }),
-    /cannot exceed/,
+    () => engine.receivePayment({ ...payment, amount: NaN }),
+    /positive/,
   );
-  receivePayment(payment);
-  assert.equal(invoiceBalance(getSnapshot(), invoice.id), 0);
-  assert.equal(
-    getSnapshot().invoices.find((i) => i.id === invoice.id)?.status,
-    "Paid",
+  assert.throws(
+    () => engine.receivePayment({ ...payment, amount: 201 }),
+    /exceed/,
+  );
+  engine.receivePayment({ ...payment, amount: 100 });
+  assert.equal(invoiceBalance(engine.getSnapshot(), "invoice"), 100);
+  assert.throws(
+    () => engine.receivePayment({ ...payment, amount: 50 }),
+    /already/,
   );
 });
-test("quotation converts once while retaining the same organization and items", () => {
-  const q = getSnapshot().quotations[8];
-  const id = convertQuotation(q.id);
-  const order = getSnapshot().orders.find((o) => o.id === id)!;
-  assert.equal(order.organizationId, q.organizationId);
-  assert.deepEqual(order.items, q.items);
-  assert.throws(() => convertQuotation(q.id), /already/);
-});
-test("sales workflow reserves then consumes stock and prevents duplicate invoice", () => {
-  const q = getSnapshot().quotations[8];
-  const orderId = convertQuotation(q.id);
-  assert.throws(() => orderAction(orderId, "deliver"), /Reserve/);
-  const before = getSnapshot()
-    .stock.filter((s) => s.productId === "prd-1")
-    .reduce((a, s) => a + s.quantity, 0);
-  orderAction(orderId, "reserve");
-  assert.equal(
-    getSnapshot().orders.find((o) => o.id === orderId)?.status,
-    "Reserved",
+test("orders cannot bypass reservation or delivery with generic updates", () => {
+  const engine = createEngine(fixture());
+  const id = engine.convertQuotation("quote");
+  assert.throws(
+    () => engine.repository("orders").update(id, { status: "Delivered" }),
+    /workflow/,
   );
-  assert.throws(() => orderAction(orderId, "reserve"), /Only confirmed/);
-  orderAction(orderId, "deliver");
-  assert.equal(
-    getSnapshot()
-      .stock.filter((s) => s.productId === "prd-1")
-      .reduce((a, s) => a + s.quantity, 0),
-    before - 1,
-  );
-  const invId = orderAction(orderId, "invoice");
-  assert.equal(
-    getSnapshot().invoices.find((i) => i.id === invId)?.organizationId,
-    q.organizationId,
-  );
-  assert.throws(() => orderAction(orderId, "invoice"), /already/);
+  assert.throws(() => engine.orderAction(id, "deliver"), /Reserve/);
+  assert.throws(() => engine.convertQuotation("quote"), /already/);
 });
-test("service updates and approvals leave linked activity", () => {
-  ticketAction("ticket-1", "Resolved", "QC passed", { status: "Resolved" });
-  assert.equal(getSnapshot().tickets[0].status, "Resolved");
-  assert.equal(getSnapshot().serviceActivities[0].description, "QC passed");
-  approveRequest("ap-1", "Approved");
-  assert.equal(getSnapshot().purchaseOrders[0].status, "Approved");
-  assert.equal(getSnapshot().approvals[0].status, "Approved");
-  assert.ok(getSnapshot().audit.length >= 3);
+test("reservations belong to an order and cancellation releases its stock", () => {
+  const engine = createEngine(fixture());
+  const id = engine.convertQuotation("quote");
+  engine.orderAction(id, "reserve");
+  assert.deepEqual(engine.getSnapshot().orders[0].allocations, [
+    { productId: "product", warehouseId: "warehouse-a", quantity: 2 },
+  ]);
+  engine.cancelOrder(id);
+  assert.equal(
+    engine.getSnapshot().stock.reduce((sum, s) => sum + s.reserved, 0),
+    0,
+  );
+  assert.equal(engine.getSnapshot().orders[0].status, "Cancelled");
 });
-test("customer edit is shared across dependent modules without copying names", () => {
-  repository("organizations").update("org-1", {
-    name: "Updated diagnostic centre",
-  });
-  const db = getSnapshot();
-  assert.equal(db.organizations[0].name, "Updated diagnostic centre");
-  assert.equal(db.equipment[0].organizationId, "org-1");
-  assert.equal(db.invoices[0].organizationId, "org-1");
-  assert.equal(db.contacts[0].organizationId, "org-1");
+test("delivery consumes only the stock allocated to this order and invoices once", () => {
+  const engine = createEngine(fixture());
+  const id = engine.convertQuotation("quote");
+  engine.orderAction(id, "reserve");
+  engine.orderAction(id, "deliver");
+  assert.equal(engine.getSnapshot().stock[0].quantity, 8);
+  assert.equal(engine.getSnapshot().stock[1].quantity, 10);
+  assert.equal(engine.getSnapshot().deliveries[0].warehouseId, "warehouse-a");
+  const invoice = engine.orderAction(id, "invoice");
+  assert.equal(invoiceBalance(engine.getSnapshot(), invoice), 0);
+  assert.throws(() => engine.orderAction(id, "invoice"), /already/);
+});
+test("failed stock operations are atomic and reject unknown destinations", () => {
+  const engine = createEngine(fixture());
+  const before = engine.getSnapshot();
+  assert.throws(
+    () =>
+      engine.transferStock(
+        "warehouse-a",
+        "warehouse-b",
+        "product",
+        99,
+        "ref",
+        "",
+      ),
+    /Insufficient/,
+  );
+  assert.equal(engine.getSnapshot(), before);
+  assert.throws(
+    () =>
+      engine.transferStock("warehouse-a", "unknown", "product", 1, "ref", ""),
+    /Destination/,
+  );
+  assert.equal(engine.getSnapshot(), before);
+});
+test("receiving and service parts update the same warehouse stock", () => {
+  const engine = createEngine(fixture(), "Verified user");
+  engine.receiveGoods("po", "warehouse-a", "GRN-REF");
+  assert.equal(engine.getSnapshot().stock[0].quantity, 12);
+  assert.throws(
+    () => engine.receiveGoods("po", "warehouse-a", "DUP"),
+    /approved|already/,
+  );
+  engine.issuePart("ticket", "product", 3, "warehouse-a");
+  assert.equal(engine.getSnapshot().stock[0].quantity, 9);
+  assert.deepEqual(engine.getSnapshot().tickets[0].parts, [
+    { productId: "product", quantity: 3 },
+  ]);
+  assert.ok(
+    engine.getSnapshot().audit.every((a) => a.user === "Verified user"),
+  );
+});
+test("server commands enforce read-only access and owner-only settings", () => {
+  const db = fixture();
+  assert.throws(
+    () =>
+      executeCommand(
+        db,
+        {
+          action: "update",
+          collection: "organizations",
+          id: "customer",
+          values: { name: "Changed" },
+        },
+        "Viewer",
+        "viewer",
+      ),
+    /read-only/,
+  );
+  assert.throws(
+    () =>
+      executeCommand(
+        db,
+        { action: "updateSettings", values: { company: "Changed" } },
+        "Editor",
+        "editor",
+      ),
+    /owner/,
+  );
+  assert.equal(db.organizations[0].name, "Example customer");
+});
+test("server rejects invalid values and links to records outside the workspace", () => {
+  const db = fixture();
+  assert.throws(
+    () =>
+      executeCommand(
+        db,
+        {
+          action: "update",
+          collection: "organizations",
+          id: "customer",
+          values: { creditLimit: -1 },
+        },
+        "Owner",
+        "owner",
+      ),
+    /invalid/,
+  );
+  assert.throws(
+    () =>
+      executeCommand(
+        db,
+        {
+          action: "update",
+          collection: "quotations",
+          id: "quote",
+          values: { organizationId: "outside" },
+        },
+        "Owner",
+        "owner",
+      ),
+    /exist|workspace/,
+  );
 });

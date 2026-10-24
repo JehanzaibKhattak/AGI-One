@@ -5,6 +5,7 @@ import { DetailPage } from "@/components/modules/detail-page";
 import { DocumentEditor } from "@/components/modules/document-editor";
 import { Accounts, Receivables } from "@/components/modules/finance";
 import { Reports } from "@/components/modules/reports";
+import { Team } from "@/components/modules/team";
 import { Settings } from "@/components/modules/settings";
 import { modules, moduleFor } from "@/lib/constants/modules";
 export async function generateMetadata({
@@ -40,6 +41,7 @@ export default async function Page({
   if (route === "/dashboard") return <Dashboard />;
   if (route === "/reports") return <Reports />;
   if (route === "/settings") return <Settings />;
+  if (route === "/settings/users") return <Team />;
   if (route === "/finance/accounts") return <Accounts />;
   if (route === "/finance/receivables") return <Receivables />;
   if (route === "/crm/overview" || route === "/crm/organizations")

@@ -1,11 +1,11 @@
 import type { Collection, Database, BaseRecord } from "@/types";
-import { money, totals, dateLabel } from "@/lib/utils";
+import { money, totals, dateLabel, today, daysFromNow } from "@/lib/utils";
 import {
   customerBalance,
   invoiceBalance,
   paidAmount,
   purchaseTotal,
-} from "@/lib/services/repository";
+} from "@/lib/services/engine";
 export type Field = {
   key: string;
   label: string;
@@ -42,15 +42,14 @@ const engineer = f("engineerId", "Assigned engineer", "select", {
   relation: "engineers",
 });
 const note = f("notes", "Notes", "textarea");
-const owner = f("owner", "Sales owner", "select", {
-  options: ["Ahmed Khan", "Sara Hussain", "Ali Raza"],
-  default: "Ahmed Khan",
-});
+const owner = f("owner", "Sales owner", "text");
 const date = f("date", "Date", "date", {
   required: true,
-  default: "2026-09-18",
+  default: today(),
 });
-const amount = f("amount", "Amount (PKR)", "number", { required: true });
+const amount = f("amount", "Amount (base currency)", "number", {
+  required: true,
+});
 const name = f("name", "Name", "text", { required: true });
 const statuses = {
   tickets: [
@@ -106,38 +105,26 @@ export const modules: Module[] = [
       f("code", "Customer code"),
       f("type", "Organization type", "select", {
         options: [
-          "Hospital",
-          "Laboratory",
-          "Clinic",
-          "Government Institution",
-          "University",
-          "Research Facility",
+          "Enterprise",
+          "Business",
+          "Small business",
+          "Government",
+          "Education",
+          "Partner",
           "Distributor",
         ],
         required: true,
       }),
-      f("city", "City", "select", {
-        options: [
-          "Karachi",
-          "Lahore",
-          "Islamabad",
-          "Rawalpindi",
-          "Peshawar",
-          "Multan",
-          "Quetta",
-          "Hyderabad",
-        ],
-        required: true,
-      }),
-      f("province", "Province"),
+      f("city", "City", "text", { required: true }),
+      f("province", "State / province"),
       f("address", "Address"),
       f("phone", "Phone"),
       f("email", "Email", "email"),
       f("website", "Website"),
-      f("ntn", "NTN"),
-      f("strn", "STRN"),
+      f("ntn", "Tax ID"),
+      f("strn", "Registration ID"),
       owner,
-      f("creditLimit", "Credit limit (PKR)", "number"),
+      f("creditLimit", "Credit limit (base currency)", "number"),
       f("paymentTerms", "Payment terms", "select", {
         options: ["Net 30", "Net 60", "Advance", "Cash on delivery"],
       }),
@@ -209,7 +196,7 @@ export const modules: Module[] = [
       org,
       f("contactId", "Contact", "select", { relation: "contacts" }),
       f("productId", "Product", "select", { relation: "products" }),
-      f("value", "Deal value (PKR)", "number", { required: true }),
+      f("value", "Deal value (base currency)", "number", { required: true }),
       f("closeDate", "Expected close", "date", { required: true }),
       owner,
       f("probability", "Probability (%)", "number"),
@@ -301,13 +288,13 @@ export const modules: Module[] = [
       name,
       f("sku", "SKU", "text", { required: true }),
       f("category", "Category", "select", {
-        options: ["Instruments", "Reagents", "Consumables", "Spare Parts"],
+        options: ["Products", "Services", "Consumables", "Spare Parts"],
         required: true,
       }),
       f("brand", "Brand / principal"),
       f("model", "Model"),
-      f("unitCost", "Unit cost (PKR)", "number"),
-      f("price", "Selling price (PKR)", "number"),
+      f("unitCost", "Unit cost (base currency)", "number"),
+      f("price", "Selling price (base currency)", "number"),
       f("reorderLevel", "Reorder level", "number"),
       f("warranty", "Warranty"),
       f("partNumber", "Part number"),
@@ -331,7 +318,7 @@ export const modules: Module[] = [
     key: "warehouses",
     title: "Warehouses",
     singular: "Warehouse",
-    description: "A connected view of your stock across Pakistan.",
+    description: "A connected view of stock across your locations.",
     path: "/inventory/warehouses",
     columns: [
       ["name", "Warehouse"],
@@ -422,6 +409,8 @@ export const modules: Module[] = [
       "Draft",
       "Awaiting Approval",
       "Approved",
+      "Rejected",
+      "Changes Requested",
       "Shipped",
       "Received",
       "Cancelled",
@@ -577,7 +566,7 @@ export const modules: Module[] = [
         required: true,
       }),
       engineer,
-      f("opened", "Opened", "date", { default: "2026-09-18" }),
+      f("opened", "Opened", "date", { default: today() }),
       f("sla", "SLA deadline", "date", { required: true }),
       note,
     ],
@@ -676,7 +665,7 @@ export const modules: Module[] = [
       }),
       f("start", "Start", "date"),
       f("expiry", "Expiry", "date", { required: true }),
-      f("value", "Contract value (PKR)", "number"),
+      f("value", "Contract value (base currency)", "number"),
       f("visits", "Visits", "number"),
       note,
     ],
@@ -787,7 +776,7 @@ export const modules: Module[] = [
       }),
       f("vendor", "Vendor"),
       amount,
-      f("tax", "Tax (PKR)", "number"),
+      f("tax", "Tax (base currency)", "number"),
       f("method", "Payment method", "select", {
         options: ["Cash", "Bank Transfer", "Cheque", "Online"],
       }),
@@ -817,7 +806,7 @@ export const modules: Module[] = [
       name,
       f("bank", "Bank"),
       f("accountNumber", "Account number"),
-      f("openingBalance", "Opening balance (PKR)", "number"),
+      f("openingBalance", "Opening balance (base currency)", "number"),
       f("reconciled", "Reconciled", "checkbox"),
     ],
     statuses: ["Active", "Inactive"],
@@ -842,8 +831,8 @@ export const modules: Module[] = [
       name,
       date,
       f("account", "Account"),
-      f("debit", "Debit (PKR)", "number"),
-      f("credit", "Credit (PKR)", "number"),
+      f("debit", "Debit (base currency)", "number"),
+      f("credit", "Credit (base currency)", "number"),
       f("reference", "Reference"),
       note,
     ],
@@ -870,8 +859,8 @@ export const modules: Module[] = [
       org,
       f("closingDate", "Closing date", "date", { required: true }),
       f("products", "Products"),
-      f("value", "Estimated value (PKR)", "number"),
-      f("bidBond", "Bid bond (PKR)", "number"),
+      f("value", "Estimated value (base currency)", "number"),
+      f("bidBond", "Bid bond (base currency)", "number"),
       owner,
       f("technical", "Technical requirements", "textarea"),
       f("competitors", "Competitors"),
@@ -917,10 +906,10 @@ export const modules: Module[] = [
       f("email", "Email", "email", { required: true }),
       f("role", "Role", "select", {
         options: [
-          "Super Admin",
+          "Owner",
           "Director",
-          "Finance Manager",
-          "Sales Manager",
+          "Viewer",
+          "Editor",
           "Sales Representative",
           "Procurement Officer",
           "Warehouse Manager",
@@ -1072,7 +1061,7 @@ export function displayRows(db: Database, key: Collection): DisplayRow[] {
             ? "Low Stock"
             : "In Stock";
       row.expiry = db.batches.some(
-        (b) => b.productId === r.id && b.expiry < "2026-10-18",
+        (b) => b.productId === r.id && b.expiry < daysFromNow(30),
       )
         ? "Expiring Soon"
         : "Healthy";
@@ -1100,7 +1089,7 @@ export function displayRows(db: Database, key: Collection): DisplayRow[] {
     if (key === "tickets")
       row.slaStatus = ["Resolved", "Closed"].includes(r.status)
         ? "Met"
-        : String(r.sla) < "2026-09-18"
+        : String(r.sla) < today()
           ? "Breached"
           : "Within SLA";
     if (key === "engineers")
@@ -1113,8 +1102,7 @@ export function displayRows(db: Database, key: Collection): DisplayRow[] {
         (e) => e.contractId === r.id,
       ).length;
       const days = Math.ceil(
-        (new Date(String(r.expiry)).getTime() -
-          new Date("2026-09-18").getTime()) /
+        (new Date(String(r.expiry)).getTime() - new Date(today()).getTime()) /
           86400000,
       );
       row.renewal =

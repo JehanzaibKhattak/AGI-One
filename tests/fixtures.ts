@@ -1,0 +1,178 @@
+import { createEmptyDatabase } from "../lib/database/empty";
+import type { Database } from "../types";
+export function fixture(): Database {
+  const db = createEmptyDatabase("Test workspace");
+  const base = { createdAt: "2026-01-01T00:00:00Z", notes: "" };
+  db.organizations.push({
+    ...base,
+    id: "customer",
+    name: "Example customer",
+    status: "Active",
+    code: "CUS-1",
+    type: "Business",
+    city: "Example city",
+    province: "",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
+    ntn: "",
+    strn: "",
+    owner: "Test owner",
+    creditLimit: 0,
+    paymentTerms: "Net 30",
+  });
+  db.products.push({
+    ...base,
+    id: "product",
+    name: "Example product",
+    status: "Active",
+    sku: "SKU-1",
+    category: "Products",
+    brand: "",
+    model: "",
+    unitCost: 40,
+    price: 100,
+    reorderLevel: 1,
+    warranty: "",
+    partNumber: "",
+    compatibility: "",
+  });
+  db.warehouses.push(
+    {
+      ...base,
+      id: "warehouse-a",
+      name: "Warehouse A",
+      status: "Active",
+      city: "",
+      manager: "",
+      address: "",
+    },
+    {
+      ...base,
+      id: "warehouse-b",
+      name: "Warehouse B",
+      status: "Active",
+      city: "",
+      manager: "",
+      address: "",
+    },
+  );
+  db.stock.push(
+    {
+      ...base,
+      id: "stock-a",
+      name: "Stock A",
+      status: "Available",
+      productId: "product",
+      warehouseId: "warehouse-a",
+      quantity: 10,
+      reserved: 0,
+    },
+    {
+      ...base,
+      id: "stock-b",
+      name: "Stock B",
+      status: "Available",
+      productId: "product",
+      warehouseId: "warehouse-b",
+      quantity: 10,
+      reserved: 0,
+    },
+  );
+  const items = [
+    {
+      productId: "product",
+      description: "Example product",
+      quantity: 2,
+      unitPrice: 100,
+      discount: 0,
+      tax: 0,
+    },
+  ];
+  db.quotations.push({
+    ...base,
+    id: "quote",
+    name: "QT-1",
+    status: "Sent",
+    organizationId: "customer",
+    contactId: "",
+    date: "2026-01-01",
+    validUntil: "2099-01-01",
+    owner: "Test owner",
+    currency: "USD",
+    paymentTerms: "Net 30",
+    deliveryTerms: "",
+    warranty: "",
+    installationTerms: "",
+    items,
+  });
+  db.invoices.push({
+    ...base,
+    id: "invoice",
+    name: "INV-1",
+    status: "Sent",
+    organizationId: "customer",
+    orderId: "",
+    date: "2026-01-01",
+    dueDate: "2026-02-01",
+    owner: "Test owner",
+    items: structuredClone(items),
+  });
+  db.banks.push({
+    ...base,
+    id: "bank",
+    name: "Operating account",
+    status: "Active",
+    bank: "Test bank",
+    accountNumber: "0001",
+    openingBalance: 0,
+    reconciled: false,
+  });
+  db.tickets.push({
+    ...base,
+    id: "ticket",
+    name: "Ticket",
+    status: "New",
+    organizationId: "customer",
+    equipmentId: "",
+    engineerId: "",
+    contactId: "",
+    problem: "Test problem",
+    priority: "Normal",
+    opened: "2026-01-01",
+    sla: "2099-01-01",
+    parts: [],
+    attachments: [],
+  });
+  db.suppliers.push({
+    ...base,
+    id: "supplier",
+    name: "Example supplier",
+    status: "Active",
+    country: "",
+    contact: "",
+    email: "",
+    phone: "",
+    currency: "USD",
+  });
+  db.purchaseOrders.push({
+    ...base,
+    id: "po",
+    name: "PO-1",
+    status: "Approved",
+    supplierId: "supplier",
+    currency: "USD",
+    exchangeRate: 1,
+    expectedArrival: "2026-01-01",
+    shippingMethod: "",
+    terms: "",
+    items: structuredClone(items),
+    freight: 0,
+    insurance: 0,
+    customs: 0,
+    clearing: 0,
+    other: 0,
+  });
+  return db;
+}

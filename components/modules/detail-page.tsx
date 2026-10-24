@@ -13,7 +13,6 @@ import {
   Building2,
   CheckCircle2,
   FileText,
-  Upload,
   Wrench,
   Send,
   Package,
@@ -33,8 +32,10 @@ import {
   invoiceBalance,
   convertQuotation,
   orderAction,
-  commit,
-  uid,
+  addNote,
+  issuePart,
+  receiveGoods,
+  cancelOrder,
 } from "@/lib/services/repository";
 import {
   type Module,
@@ -89,9 +90,12 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
   const isDoc = ["quotations", "invoices", "purchaseOrders"].includes(
     module.key,
   );
-  const safe = (fn: () => void, message: string) => {
+  const safe = async (
+    fn: () => unknown | Promise<unknown>,
+    message: string,
+  ) => {
     try {
-      fn();
+      await fn();
       toast.success(message);
     } catch (e) {
       toast.error((e as Error).message);
@@ -190,33 +194,10 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
         <div>
           <h2>Documents</h2>
           <p>
-            Demo attachments retain filenames; file storage is a backend
-            integration.
+            Secure file uploads are not enabled yet. No files are stored by this
+            page.
           </p>
         </div>
-        <label className="btn">
-          <Upload size={15} />
-          Add attachment
-          <input
-            className="sr-only"
-            type="file"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              safe(() => {
-                if (ticket)
-                  ticketAction(id, "Attachment added", file.name, {
-                    attachments: [...ticket.attachments, file.name],
-                  });
-                else
-                  repository(module.key).update(id, {
-                    notes: (record.notes || "") + "\nAttachment: " + file.name,
-                  });
-              }, "Attachment reference added");
-              e.target.value = "";
-            }}
-          />
-        </label>
       </div>
       {attachments.length ? (
         <div className="document-list">
@@ -224,14 +205,14 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
             <div key={i}>
               <FileText size={20} />
               <strong>{name}</strong>
-              <Badge>Reference saved</Badge>
+              <Badge>Legacy reference</Badge>
             </div>
           ))}
         </div>
       ) : (
         <Empty
           title="No attachments yet"
-          description="Add a document reference to this record."
+          description="File storage will be enabled before document uploads are available."
         />
       )}
     </section>
@@ -667,7 +648,7 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
             ? data.technical
             : tab === "Financial Proposal"
               ? `Estimated value: ${money(Number(data.value))}. Bid bond: ${money(Number(data.bidBond))}.`
-              : record.status;
+              : record!.status;
     content = (
       <section className="panel text-panel">
         <h2>{tab}</h2>
@@ -684,8 +665,8 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
       <section className="panel text-panel">
         <h2>Bank reconciliation</h2>
         <p>
-          Compare receipts against your bank statement and confirm the demo
-          reconciliation.
+          Statement matching is under development. Compare records with your
+          bank statement; this screen does not certify reconciliation.
         </p>
         <p>
           Opening balance: {money(Number(data.openingBalance))} · Deposits:{" "}
@@ -696,10 +677,9 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
           className="btn primary"
           disabled={Boolean(data.reconciled)}
           onClick={() =>
-            safe(
-              () => repository("banks").update(id, { reconciled: true }),
-              "Account marked reconciled",
-            )
+            safe(() => {
+              throw new Error("Statement matching is not available yet.");
+            }, "Account marked reconciled")
           }
         >
           <CheckCircle2 size={15} />
@@ -719,7 +699,15 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
           description={`${module.singular} · ${String(data.code || data.serial || id)}${org ? " · " + org.city : ""}`}
         >
           <Badge>{record!.status}</Badge>
-          {module.key !== "payments" && (
+          {![
+            "payments",
+            "orders",
+            "journals",
+            "goodsReceipts",
+            "transactions",
+            "deliveries",
+            "audit",
+          ].includes(module.key) && (
             <button
               className="btn"
               onClick={() =>
@@ -747,8 +735,8 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
               disabled={["Resolved", "Closed"].includes(record!.status)}
               onClick={() =>
                 safe(
-                  () =>
-                    ticketAction(
+                  async () =>
+                    await ticketAction(
                       id,
                       "Resolved",
                       "Equipment tested and returned to operation.",
@@ -876,7 +864,10 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
               className="btn primary"
               onClick={() =>
                 safe(
-                  () => router.push(recordPath("orders", convertQuotation(id))),
+                  async () =>
+                    router.push(
+                      recordPath("orders", await convertQuotation(id)),
+                    ),
                   "Sales order created",
                 )
               }
@@ -894,6 +885,55 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
             </button>
           </div>
         )}
+        {module.key === "purchaseOrders" && record!.status === "Approved" && (
+          <form
+            className="workflow-actions"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              void safe(
+                () =>
+                  receiveGoods(
+                    id,
+                    String(form.get("warehouse")),
+                    String(form.get("reference")),
+                  ),
+                "Goods received and stock updated",
+              );
+            }}
+          >
+            <label className="field">
+              Receiving warehouse
+              <select name="warehouse" required>
+                <option value="">Choose warehouse</option>
+                {db.warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Reference
+              <input required name="reference" />
+            </label>
+            <button className="btn primary">Receive goods</button>
+          </form>
+        )}
+        {module.key === "orders" &&
+          ["Confirmed", "Reserved"].includes(record!.status) && (
+            <button
+              className="btn danger-outline"
+              onClick={() =>
+                void safe(
+                  () => cancelOrder(id),
+                  "Order cancelled and reservations released",
+                )
+              }
+            >
+              Cancel order
+            </button>
+          )}
         {module.key === "orders" && (
           <div className="workflow-actions">
             {(["reserve", "deliver", "invoice"] as const).map((a, i) => (
@@ -909,8 +949,8 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
                 }
                 onClick={() =>
                   safe(
-                    () => {
-                      const result = orderAction(id, a);
+                    async () => {
+                      const result = await orderAction(id, a);
                       if (result) router.push(recordPath("invoices", result));
                     },
                     a === "reserve"
@@ -948,8 +988,8 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
                 value={ticket.status}
                 onChange={(e) =>
                   safe(
-                    () =>
-                      ticketAction(
+                    async () =>
+                      await ticketAction(
                         id,
                         e.target.value,
                         `Ticket status changed to ${e.target.value}.`,
@@ -1082,13 +1122,13 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
         }
       >
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
             try {
               if (action === "assign") {
                 const engineerId = String(f.get("engineer"));
-                ticketAction(
+                await ticketAction(
                   id,
                   "Engineer Assigned",
                   db.engineers.find((e) => e.id === engineerId)!.name,
@@ -1099,34 +1139,17 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
                 const quantity = Number(f.get("quantity"));
                 if (quantity <= 0 || !Number.isInteger(quantity))
                   throw new Error("Enter a positive whole quantity.");
-                ticketAction(
+                await issuePart(
                   id,
-                  "Part Replaced",
-                  `${db.products.find((p) => p.id === productId)!.name} × ${quantity}`,
-                  { parts: [...ticket!.parts, { productId, quantity }] },
+                  productId,
+                  quantity,
+                  String(f.get("warehouse")),
                 );
               } else {
                 const note = String(f.get("note")).trim();
                 if (!note) throw new Error("Enter a note.");
-                if (ticket) ticketAction(id, "Note added", note);
-                else
-                  commit((d) => {
-                    const r = (d[module.key] as BaseRecord[]).find(
-                      (r) => r.id === id,
-                    )!;
-                    r.notes = (r.notes || "") + "\n" + note;
-                    d.activities.unshift({
-                      id: uid("act"),
-                      name: "Note added",
-                      status: "Recorded",
-                      createdAt: new Date().toISOString(),
-                      organizationId: orgId,
-                      recordId: id,
-                      date: new Date().toISOString(),
-                      user: "Admin",
-                      description: note,
-                    });
-                  });
+                if (ticket) await ticketAction(id, "Note added", note);
+                else await addNote(module.key, id, note);
               }
               toast.success("Record updated");
               setAction("");
@@ -1150,6 +1173,17 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
               </label>
             ) : action === "part" ? (
               <>
+                <label className="field full">
+                  Warehouse
+                  <select required name="warehouse">
+                    <option value="">Choose warehouse</option>
+                    {db.warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="field full">
                   Replacement part
                   <select name="product" required>

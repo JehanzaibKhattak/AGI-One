@@ -24,9 +24,9 @@ import { useDatabase } from "@/lib/services/provider";
 import {
   repository,
   transferStock,
-  commit,
   approveRequest,
   customerBalance,
+  getMember,
 } from "@/lib/services/repository";
 import {
   type Module,
@@ -35,7 +35,7 @@ import {
   moduleFor,
   cellLabel,
 } from "@/lib/constants/modules";
-import { money, initials, dateLabel } from "@/lib/utils";
+import { money, initials, dateLabel, today, daysFromNow } from "@/lib/utils";
 import type { BaseRecord, Collection } from "@/types";
 import {
   addMonths,
@@ -60,7 +60,7 @@ export function ModulePage({ module }: { module: Module }) {
   const [transfer, setTransfer] = useState(false);
   const [bulk, setBulk] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState(module.statuses[0] || "");
-  const [month, setMonth] = useState(new Date("2026-09-01T12:00:00"));
+  const [month, setMonth] = useState(new Date());
   const rows = displayRows(db, module.key);
   const visible = tab === "All" ? rows : rows.filter((r) => r.status === tab);
   const selected = rows.find((r) => r.id === peek);
@@ -68,7 +68,14 @@ export function ModulePage({ module }: { module: Module }) {
   const isDoc = ["quotations", "invoices", "purchaseOrders"].includes(
     module.key,
   );
-  const isReadOnly = ["audit", "payments", "journals"].includes(module.key);
+  const isReadOnly = [
+    "audit",
+    "payments",
+    "journals",
+    "goodsReceipts",
+    "transactions",
+    "deliveries",
+  ].includes(module.key);
   const add = () =>
     isDoc ? router.push(module.path + "/new") : setCreate(true);
   const statusTabs = [
@@ -98,22 +105,29 @@ export function ModulePage({ module }: { module: Module }) {
             Transfer stock
           </button>
         )}
-        {module.key !== "audit" && (
-          <button className="btn primary" onClick={add}>
-            <Plus size={16} />
-            {module.key === "payments"
-              ? "Receive payment"
-              : `New ${module.singular.toLowerCase()}`}
-          </button>
-        )}
+        {getMember().role !== "viewer" &&
+          ![
+            "audit",
+            "journals",
+            "goodsReceipts",
+            "transactions",
+            "deliveries",
+            "orders",
+            "approvals",
+            "users",
+            "roles",
+          ].includes(module.key) && (
+            <button className="btn primary" onClick={add}>
+              <Plus size={16} />
+              {module.key === "payments"
+                ? "Receive payment"
+                : `New ${module.singular.toLowerCase()}`}
+            </button>
+          )}
       </PageHeading>
       {module.key === "organizations" && (
         <div className="stats-grid">
-          <Stat
-            label="Total organizations"
-            value={db.organizations.length}
-            change="↗ 2 this month"
-          />
+          <Stat label="Total organizations" value={db.organizations.length} />
           <Stat
             label="Active relationships"
             value={db.organizations.filter((o) => o.status === "Active").length}
@@ -158,7 +172,7 @@ export function ModulePage({ module }: { module: Module }) {
           />
           <Stat
             label="Expiring soon"
-            value={db.batches.filter((b) => b.expiry < "2026-10-18").length}
+            value={db.batches.filter((b) => b.expiry < daysFromNow(30)).length}
           />
           <Stat
             label="Reserved stock"
@@ -523,14 +537,18 @@ export function ModulePage({ module }: { module: Module }) {
                       <select
                         aria-label={`Stage for ${o.name} at ${db.organizations.find((c) => c.id === o.organizationId)?.name}`}
                         value={o.status}
-                        onChange={(e) => {
-                          repository("opportunities").update(o.id, {
-                            status: e.target.value,
-                            probability: [10, 25, 40, 55, 75, 90, 100, 0][
-                              module.statuses.indexOf(e.target.value)
-                            ],
-                          });
-                          toast.success("Opportunity stage updated");
+                        onChange={async (e) => {
+                          try {
+                            await repository("opportunities").update(o.id, {
+                              status: e.target.value,
+                              probability: [10, 25, 40, 55, 75, 90, 100, 0][
+                                module.statuses.indexOf(e.target.value)
+                              ],
+                            });
+                            toast.success("Opportunity stage updated");
+                          } catch (error) {
+                            toast.error((error as Error).message);
+                          }
                         }}
                       >
                         {module.statuses.map((s) => (
@@ -559,10 +577,7 @@ export function ModulePage({ module }: { module: Module }) {
               >
                 <ChevronLeft size={17} />
               </button>
-              <button
-                className="btn"
-                onClick={() => setMonth(new Date("2026-09-01T12:00:00"))}
-              >
+              <button className="btn" onClick={() => setMonth(new Date())}>
                 Today
               </button>
               <button
@@ -588,7 +603,7 @@ export function ModulePage({ module }: { module: Module }) {
                 format(month, "yyyy-MM") + "-" + String(i + 1).padStart(2, "0");
               return (
                 <div
-                  className={`calendar-day ${date === "2026-09-18" ? "today" : ""}`}
+                  className={`calendar-day ${date === today(db.settings.timezone) ? "today" : ""}`}
                   key={date}
                 >
                   <span>{i + 1}</span>
@@ -685,7 +700,7 @@ export function ModulePage({ module }: { module: Module }) {
           }
         />
       )}
-      {module.key === "users" && <RolePermissions />}
+
       <Modal
         open={!!peek}
         onOpenChange={(v) => {
@@ -730,8 +745,9 @@ export function ModulePage({ module }: { module: Module }) {
                     key={s}
                     disabled={selected.status !== "Pending"}
                     onClick={() => {
-                      approveRequest(selected.id, s);
-                      toast.success(`Request ${s.toLowerCase()}`);
+                      void approveRequest(selected.id, s)
+                        .then(() => toast.success(`Request ${s.toLowerCase()}`))
+                        .catch((e) => toast.error(e.message));
                     }}
                   >
                     <ShieldCheck size={15} />
@@ -826,11 +842,18 @@ export function ModulePage({ module }: { module: Module }) {
           <button
             className="btn primary"
             onClick={() => {
-              bulk.forEach((id) =>
-                repository(module.key).update(id, { status: bulkStatus }),
-              );
-              setBulk([]);
-              toast.success("Selected records updated");
+              void (async () => {
+                try {
+                  for (const id of bulk)
+                    await repository(module.key).update(id, {
+                      status: bulkStatus,
+                    });
+                  setBulk([]);
+                  toast.success("Selected records updated");
+                } catch (error) {
+                  toast.error((error as Error).message);
+                }
+              })();
             }}
           >
             Apply status
@@ -854,11 +877,11 @@ export function StockTransfer({ onClose }: { onClose: () => void }) {
       description="Available quantities update in both warehouses."
     >
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           try {
-            transferStock(
+            await transferStock(
               String(f.get("from")),
               String(f.get("to")),
               String(f.get("product")),
@@ -927,80 +950,5 @@ export function StockTransfer({ onClose }: { onClose: () => void }) {
         </div>
       </form>
     </Modal>
-  );
-}
-function RolePermissions() {
-  const db = useDatabase();
-  const [roleId, setRoleId] = useState("role-1");
-  const role = db.roles.find((r) => r.id === roleId)!;
-  return (
-    <section className="panel permissions-panel">
-      <div className="panel-heading">
-        <div>
-          <h2>Role permissions</h2>
-          <p>
-            Demo permission matrix. Enforcement requires backend authorization.
-          </p>
-        </div>
-        <select
-          aria-label="Role to configure"
-          value={roleId}
-          onChange={(e) => setRoleId(e.target.value)}
-        >
-          {db.roles.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Module</th>
-              {["View", "Create", "Edit", "Delete", "Approve", "Export"].map(
-                (p) => (
-                  <th key={p}>{p}</th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {role.permissions.map((p, i) => (
-              <tr key={p.module}>
-                <td>{p.module}</td>
-                {(
-                  [
-                    "view",
-                    "create",
-                    "edit",
-                    "delete",
-                    "approve",
-                    "export",
-                  ] as const
-                ).map((k) => (
-                  <td key={k}>
-                    <input
-                      type="checkbox"
-                      aria-label={`${role.name} ${p.module} ${k}`}
-                      checked={p[k]}
-                      onChange={(e) => {
-                        commit((d) => {
-                          d.roles.find((r) => r.id === roleId)!.permissions[i][
-                            k
-                          ] = e.target.checked;
-                        });
-                        toast.success("Demo permission saved");
-                      }}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }

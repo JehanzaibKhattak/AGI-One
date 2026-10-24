@@ -87,6 +87,7 @@ export interface Quotation extends BaseRecord {
   items: QuotationItem[];
 }
 export interface SalesOrder extends BaseRecord {
+  allocations?: { productId: string; warehouseId: string; quantity: number }[];
   organizationId: string;
   quotationId: string;
   date: string;

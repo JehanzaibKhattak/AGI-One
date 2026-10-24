@@ -21,8 +21,7 @@ import {
   type DisplayRow,
   cellLabel,
 } from "@/lib/constants/modules";
-import { exportCSV, download, totals } from "@/lib/utils";
-import { invoiceBalance } from "@/lib/services/repository";
+import { exportCSV, download, totals, today } from "@/lib/utils";
 const groups = [
   {
     name: "Sales",
@@ -51,13 +50,7 @@ const groups = [
     name: "Finance",
     icon: Wallet,
     description: "Make confident financial decisions.",
-    reports: [
-      "Receivable Aging",
-      "Customer Statement",
-      "Profit & Loss",
-      "Balance Sheet",
-      "Cash Flow",
-    ],
+    reports: ["Receivable Aging", "Customer Statement"],
   },
   {
     name: "CRM",
@@ -93,8 +86,10 @@ export function Reports() {
   const [search, setSearch] = useState("");
   const [report, setReport] = useState("");
   const [city, setCity] = useState("All cities");
-  const [from, setFrom] = useState("2026-01-01");
-  const [to, setTo] = useState("2026-12-31");
+  const [from, setFrom] = useState(
+    today(db.settings.timezone).slice(0, 4) + "-01-01",
+  );
+  const [to, setTo] = useState(today(db.settings.timezone));
   const [preview, setPreview] = useState(false);
   const inRange = (date: string) =>
     date.slice(0, 10) >= from && date.slice(0, 10) <= to;
@@ -107,7 +102,7 @@ export function Reports() {
     (i) =>
       orgIds.has(i.organizationId) &&
       inRange(i.date) &&
-      i.status !== "Cancelled",
+      !["Draft", "Cancelled"].includes(i.status),
   );
   let rows: DisplayRow[] = [];
   let columns: [string, string][] = [];
@@ -214,7 +209,9 @@ export function Reports() {
         days: Math.max(
           0,
           Math.floor(
-            (Date.parse(to) - Date.parse(String(i.dueDate))) / 86400000,
+            (Date.parse(today(db.settings.timezone)) -
+              Date.parse(String(i.dueDate))) /
+              86400000,
           ),
         ),
       }));
@@ -236,76 +233,6 @@ export function Reports() {
       ["owner", "Owner"],
       ["opportunities", "Open opportunities"],
       ["balance", "Current balance"],
-    ];
-  } else if (["Profit & Loss", "Balance Sheet", "Cash Flow"].includes(report)) {
-    const sales = invoices.reduce(
-      (s, i) => s + totals(i.items).subtotal - totals(i.items).discount,
-      0,
-    );
-    const cost = invoices.reduce(
-      (s, i) =>
-        s +
-        i.items.reduce(
-          (a, l) =>
-            a +
-            l.quantity *
-              (db.products.find((p) => p.id === l.productId)?.unitCost || 0),
-          0,
-        ),
-      0,
-    );
-    const expenses = db.expenses
-      .filter((e) => inRange(e.date))
-      .reduce((s, e) => s + e.amount, 0);
-    const receipts = db.payments
-      .filter((p) => inRange(p.date) && orgIds.has(p.organizationId))
-      .reduce((s, p) => s + p.amount, 0);
-    const entries =
-      report === "Profit & Loss"
-        ? [
-            ["Revenue excluding tax", sales],
-            ["Estimated cost of goods", cost],
-            ["Operating expenses", expenses],
-            ["Estimated profit before tax", sales - cost - expenses],
-          ]
-        : report === "Cash Flow"
-          ? [
-              ["Customer receipts", receipts],
-              [
-                "Paid operating expenses",
-                db.expenses
-                  .filter((e) => e.status === "Paid" && inRange(e.date))
-                  .reduce((s, e) => s + e.amount, 0),
-              ],
-            ]
-          : [
-              [
-                "Bank opening balance",
-                db.banks.reduce((s, b) => s + b.openingBalance, 0),
-              ],
-              [
-                "Current receivables",
-                db.invoices.reduce((s, i) => s + invoiceBalance(db, i.id), 0),
-              ],
-              [
-                "Current inventory",
-                displayRows(db, "products").reduce(
-                  (s, p) => s + Number(p.stockValue),
-                  0,
-                ),
-              ],
-              ["Opening payables snapshot", 8750000],
-            ];
-    rows = entries.map(([name, value], i) => ({
-      id: String(i),
-      name: String(name),
-      value: Number(value),
-      status: "Demo estimate",
-    }));
-    columns = [
-      ["name", "Account / measure"],
-      ["value", "Amount"],
-      ["status", "Basis"],
     ];
   } else {
     const key =
@@ -472,7 +399,7 @@ export function Reports() {
           if (!v) setReport("");
         }}
         title={report}
-        description="Live demo records. Snapshot reports use current balances; transaction reports use the selected dates."
+        description="Workspace records. Snapshot reports use current balances and today’s aging; transaction reports use the selected dates."
         wide
       >
         <div className="report-filters">
@@ -524,7 +451,7 @@ export function Reports() {
       </Modal>
       <Modal open={preview} onOpenChange={setPreview} title="Print report" wide>
         <div className="print-document">
-          <h1>AMSS One · {report}</h1>
+          <h1>AGI One · {report}</h1>
           <p>
             {from} — {to} · {city}
           </p>

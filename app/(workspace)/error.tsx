@@ -9,8 +9,7 @@ export default function ErrorPage({
     <div className="error-state">
       <h1>Something interrupted this page</h1>
       <p>
-        Your saved demo records are still in this browser. Try loading the page
-        again.
+        Your records are stored in your workspace. Try loading the page again.
       </p>
       <button className="btn primary" onClick={reset}>
         Try again

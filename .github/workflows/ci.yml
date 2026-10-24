@@ -1,0 +1,48 @@
+name: Verify AGI One
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: agi
+          POSTGRES_PASSWORD: agi_ci_only
+          POSTGRES_DB: agi_one_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agi -d agi_one_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://agi:agi_ci_only@localhost:5432/agi_one_test
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci-only-secret-for-disposable-test-database-123456789
+      BASE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run db:migrate
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          npm start > /tmp/agi-one-server.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3000/login > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-details
+          path: test-results/
