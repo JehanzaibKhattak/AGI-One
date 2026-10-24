@@ -7,7 +7,7 @@ import {
   customerBalance,
 } from "../lib/services/engine";
 import { executeCommand } from "../lib/server/commands";
-import { totals } from "../lib/utils";
+import { totals, csvText } from "../lib/utils";
 import { fixture } from "./fixtures";
 
 test("new workspaces contain no business records", () => {
@@ -224,4 +224,32 @@ test("server rejects invalid values and links to records outside the workspace",
       ),
     /exist|workspace/,
   );
+});
+
+test("CSV exports escape formulas, whitespace prefixes, quotes and newlines", () => {
+  const csv = csvText([
+    { name: '\t=HYPERLINK("x")', notes: "two\nlines" },
+    { name: " +SUM(1,2)", notes: "plain" },
+  ]);
+  assert.ok(csv.includes('"\'\t=HYPERLINK(\"\"x\"\")"'));
+  assert.ok(csv.includes('"\' +SUM(1,2)"'));
+  assert.ok(csv.includes('"two\nlines"'));
+});
+
+test("purchase approval requests carry the actual landed cost", () => {
+  const db = fixture();
+  const po = {
+    ...db.purchaseOrders[0],
+    id: "new-po",
+    status: "Awaiting Approval",
+    freight: 25,
+  };
+  db.purchaseOrders = [];
+  const result = executeCommand(
+    db,
+    { action: "create", collection: "purchaseOrders", record: po },
+    "Owner",
+    "owner",
+  );
+  assert.equal(result.data.approvals[0].amount, 225);
 });

@@ -1,4 +1,11 @@
-import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { auth } from "@/lib/server/auth";
+import { pool } from "@/lib/server/db";
+import { can, areaForPath } from "@/lib/access";
+import { Empty } from "@/components/common/ui";
+import { AuditTrail } from "@/components/modules/audit";
+import { CustomerDirectory } from "@/components/modules/customer-directory";
+import { notFound, redirect } from "next/navigation";
 import { Dashboard } from "@/components/dashboard/dashboard";
 import { ModulePage } from "@/components/modules/module-page";
 import { DetailPage } from "@/components/modules/detail-page";
@@ -38,14 +45,38 @@ export default async function Page({
 }) {
   const { path } = await params;
   const route = "/" + path.join("/");
+  const area = areaForPath(route);
+  if (area || route === "/approvals") {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session) redirect("/login");
+    const member = (
+      await pool.query(
+        "SELECT role,grants,branch_ids FROM agi_members WHERE user_id=$1",
+        [session.user.id],
+      )
+    ).rows[0];
+    if (
+      !member ||
+      !(area
+        ? can(member, area, "view")
+        : can(member, "finance", "view") || can(member, "procurement", "view"))
+    )
+      return (
+        <Empty
+          title="Access restricted"
+          description="Your workspace owner can adjust your module access."
+        />
+      );
+  }
   if (route === "/dashboard") return <Dashboard />;
   if (route === "/reports") return <Reports />;
   if (route === "/settings") return <Settings />;
   if (route === "/settings/users") return <Team />;
+  if (route === "/settings/audit-log") return <AuditTrail />;
   if (route === "/finance/accounts") return <Accounts />;
   if (route === "/finance/receivables") return <Receivables />;
   if (route === "/crm/overview" || route === "/crm/organizations")
-    return <ModulePage module={moduleFor("organizations")} />;
+    return <CustomerDirectory />;
   if (route.startsWith("/crm/customers/"))
     return <DetailPage module={moduleFor("organizations")} id={path[2]} />;
   if (route.startsWith("/inventory/products/"))
@@ -54,6 +85,7 @@ export default async function Page({
     .filter((m) => route === m.path || route.startsWith(m.path + "/"))
     .sort((a, b) => b.path.length - a.path.length)[0];
   if (!config) notFound();
+  if (route === "/crm") return <CustomerDirectory />;
   if (route === config.path)
     return <ModulePage key={config.key} module={config} />;
   const suffix = route.slice(config.path.length + 1).split("/");

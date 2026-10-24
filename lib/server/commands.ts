@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { modules } from "@/lib/constants/modules";
-import { createEngine } from "@/lib/services/engine";
+import { createEngine, purchaseTotal } from "@/lib/services/engine";
 import type { Database, Entity, Collection } from "@/types";
 import type { Command } from "@/lib/services/commands";
 import { HttpError } from "./errors";
@@ -156,6 +156,20 @@ export function validateRecord(
         throw new Error("A selected product does not exist.");
   }
 }
+function approvalAmount(collection: Collection, record: Entity<Collection>) {
+  if (collection === "purchaseOrders") {
+    const po = record as Entity<"purchaseOrders">;
+    return purchaseTotal(po.items, po.exchangeRate, [
+      po.freight,
+      po.insurance,
+      po.customs,
+      po.clearing,
+      po.other,
+    ]);
+  }
+  const expense = record as Entity<"expenses">;
+  return expense.amount + expense.tax;
+}
 export function executeCommand(
   db: Database,
   raw: unknown,
@@ -230,7 +244,7 @@ export function executeCommand(
             type: command.collection,
             requestedBy: actor,
             date: new Date().toISOString().slice(0, 10),
-            amount: 0,
+            amount: approvalAmount(command.collection, command.record),
             reason: "Submitted for approval",
             recordId: command.record.id,
           });
@@ -393,7 +407,10 @@ export function executeCommand(
             type: "purchaseOrders",
             requestedBy: actor,
             date: new Date().toISOString().slice(0, 10),
-            amount: 0,
+            amount: approvalAmount(
+              command.collection,
+              next as Entity<Collection>,
+            ),
             reason: "Submitted for approval",
             recordId: current.id,
           });

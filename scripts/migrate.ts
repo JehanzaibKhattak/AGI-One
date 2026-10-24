@@ -17,6 +17,13 @@ async function main() {
     const migration = await getMigrations(auth.options);
     await migration.runMigrations();
     await pool.query(await readFile("lib/server/schema.sql", "utf8"));
+    const { migrateSnapshots } = await import("../lib/server/records");
+    const client = await pool.connect();
+    try {
+      await migrateSnapshots(client);
+    } finally {
+      client.release();
+    }
     console.log("AGI One database migrations complete.");
   } finally {
     await pool.end();

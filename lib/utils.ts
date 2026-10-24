@@ -44,19 +44,21 @@ export function totals(items: QuotationItem[]) {
     total: roundMoney(subtotal - discount + tax),
   };
 }
-export function exportCSV(name: string, rows: Record<string, unknown>[]) {
+export function csvText(rows: Record<string, unknown>[]) {
   const keys = [...new Set(rows.flatMap(Object.keys))];
-  const escape = (v: unknown) =>
+  const escape = (value: unknown) =>
     '"' +
-    String(v ?? "")
-      .replace(/^[=+@-]/, "'$&")
+    String(value ?? "")
+      .replace(/^[\t\r\n ]*[=+@-]|^[\t\r\n]/, "'$&")
       .replace(/"/g, '""') +
     '"';
-  const csv = [
+  return [
     keys.map(escape).join(","),
-    ...rows.map((row) => keys.map((k) => escape(row[k])).join(",")),
+    ...rows.map((row) => keys.map((key) => escape(row[key])).join(",")),
   ].join("\r\n");
-  download(name + ".csv", "\uFEFF" + csv, "text/csv;charset=utf-8;");
+}
+export function exportCSV(name: string, rows: Record<string, unknown>[]) {
+  download(name + ".csv", "\uFEFF" + csvText(rows), "text/csv;charset=utf-8;");
 }
 export function download(name: string, body: string, type: string) {
   const url = URL.createObjectURL(new Blob([body], { type }));

@@ -1,4 +1,5 @@
 export interface BaseRecord {
+  branchId?: string;
   id: string;
   name: string;
   status: string;

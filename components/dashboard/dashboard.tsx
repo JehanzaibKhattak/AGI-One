@@ -1,4 +1,5 @@
 "use client";
+import { can, areaForPath, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -20,6 +21,8 @@ import { RevenueChart, MiniBar } from "./charts";
 import type { Collection } from "@/types";
 export function Dashboard() {
   const db = useDatabase();
+  const financeVisible = can(getMember(), "finance", "view");
+
   const current = today(db.settings.timezone);
   const [from, setFrom] = useState(current.slice(0, 7) + "-01");
   const [to, setTo] = useState(current);
@@ -82,6 +85,10 @@ export function Dashboard() {
       >
         <button
           className="btn"
+          disabled={
+            !can(getMember(), "finance", "export") ||
+            !can(getMember(), "sales", "export")
+          }
           onClick={() =>
             exportCSV("agi-one-overview", [
               {
@@ -108,7 +115,7 @@ export function Dashboard() {
           {db.settings.currency} · {db.settings.timezone}
         </span>
       </div>
-      {!db.organizations.length && (
+      {can(getMember(), "customers", "view") && !db.organizations.length && (
         <section className="panel workspace-card">
           <Badge>GET STARTED</Badge>
           <h2>Your workspace starts here.</h2>
@@ -158,25 +165,29 @@ export function Dashboard() {
       <div className="stats-grid">
         <Stat
           label="Issued sales · selected period"
-          value={money(sales, true)}
+          value={financeVisible ? money(sales, true) : "Restricted"}
           href="/finance/invoices"
         />
         <Stat
           label="Collections · selected period"
-          value={money(collections, true)}
+          value={financeVisible ? money(collections, true) : "Restricted"}
           href="/finance/receipts"
         />
         <Stat
           label="Outstanding · current"
-          value={money(outstanding, true)}
+          value={financeVisible ? money(outstanding, true) : "Restricted"}
           href="/finance/receivables"
         />
         <Stat
           label="Open pipeline · current"
-          value={money(
-            pipeline.reduce((sum, o) => sum + o.value, 0),
-            true,
-          )}
+          value={
+            can(getMember(), "sales", "view")
+              ? money(
+                  pipeline.reduce((sum, o) => sum + o.value, 0),
+                  true,
+                )
+              : "Restricted"
+          }
           href="/sales/opportunities"
         />
       </div>
@@ -237,19 +248,24 @@ export function Dashboard() {
               ).length,
               "/inventory",
             ],
-          ].map(([label, count, href]) => (
-            <Link
-              className="attention-row"
-              href={String(href)}
-              key={String(label)}
-            >
-              <div>
-                <strong>{label}</strong>
-              </div>
-              <span className="attention-count">{count}</span>
-              <ArrowUpRight size={15} />
-            </Link>
-          ))}
+          ]
+            .filter(([, , href]) => {
+              const area = areaForPath(String(href));
+              return !area || can(getMember(), area, "view");
+            })
+            .map(([label, count, href]) => (
+              <Link
+                className="attention-row"
+                href={String(href)}
+                key={String(label)}
+              >
+                <div>
+                  <strong>{label}</strong>
+                </div>
+                <span className="attention-count">{count}</span>
+                <ArrowUpRight size={15} />
+              </Link>
+            ))}
         </section>
         <section className="panel activity-panel">
           <div className="panel-heading">
@@ -278,12 +294,16 @@ export function Dashboard() {
       <section className="panel workspace-card">
         <h2>Quick actions</h2>
         <div className="drawer-actions">
-          {quick.map(([label, key, Icon]) => (
-            <button className="btn" key={key} onClick={() => setCreate(key)}>
-              <Icon size={16} />
-              {label}
-            </button>
-          ))}
+          {quick
+            .filter(([, key]) =>
+              can(getMember(), collectionArea[key], "create"),
+            )
+            .map(([label, key, Icon]) => (
+              <button className="btn" key={key} onClick={() => setCreate(key)}>
+                <Icon size={16} />
+                {label}
+              </button>
+            ))}
           <Link className="btn" href="/sales/quotations/new">
             Create quotation
             <ArrowUpRight size={15} />

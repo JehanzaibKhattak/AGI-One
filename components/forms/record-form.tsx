@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/repository";
 import { type Module, type Field } from "@/lib/constants/modules";
 import { totals, today } from "@/lib/utils";
+import { RelationPicker } from "./relation-picker";
 import { Modal } from "@/components/common/ui";
 import type { BaseRecord, Entity, Collection } from "@/types";
 function fieldSchema(field: Field) {
@@ -83,31 +84,10 @@ export function RecordForm({
     try {
       const data = {
         ...result.data,
+        branchId: String(input.branchId || record?.branchId || "") || undefined,
         id: record?.id || uid(module.key),
         createdAt: record?.createdAt || new Date().toISOString(),
       } as Entity<Collection>;
-      if (
-        module.key === "organizations" &&
-        !(data as unknown as Record<string, unknown>).code
-      )
-        (data as unknown as Record<string, unknown>).code =
-          `CUS-${String(db.organizations.length + 1).padStart(4, "0")}`;
-      for (const field of fields.filter((f) => f.relation)) {
-        const value = input[field.key];
-        if (!value) continue;
-        const linked = (
-          db[field.relation!] as (BaseRecord & { organizationId?: string })[]
-        ).find((r) => r.id === value);
-        if (!linked) throw new Error(`${field.label} no longer exists.`);
-        if (
-          linked.organizationId &&
-          input.organizationId &&
-          linked.organizationId !== input.organizationId
-        )
-          throw new Error(
-            `${field.label} must belong to the selected customer.`,
-          );
-      }
       if (module.key === "tickets")
         Object.assign(data, {
           parts: record && "parts" in record ? record.parts : [],
@@ -154,6 +134,26 @@ export function RecordForm({
     >
       <form onSubmit={submit}>
         <div className="form-grid">
+          {!record && Boolean(getMember().branches?.length) && (
+            <label className="field">
+              <span>Branch</span>
+              <select
+                {...form.register("branchId")}
+                defaultValue={
+                  getMember().branch_ids?.length === 1
+                    ? getMember().branch_ids![0]
+                    : ""
+                }
+              >
+                <option value="">Unassigned</option>
+                {getMember().branches?.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {fields.map((field) => {
             let options = field.relation
               ? (
@@ -184,7 +184,19 @@ export function RecordForm({
                   {field.label}
                   {field.required && <b className="required"> *</b>}
                 </span>
-                {field.type === "select" ? (
+                {field.relation ? (
+                  <RelationPicker
+                    collection={field.relation}
+                    label={field.label}
+                    value={String(values[field.key] || "")}
+                    organizationId={
+                      field.relation === "organizations"
+                        ? undefined
+                        : String(values.organizationId || "") || undefined
+                    }
+                    onChange={(id) => form.setValue(field.key, id)}
+                  />
+                ) : field.type === "select" ? (
                   <select {...form.register(field.key)}>
                     <option value="">Select {field.label.toLowerCase()}</option>
                     {options?.map((o) => (

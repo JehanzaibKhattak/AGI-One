@@ -1,4 +1,6 @@
 "use client";
+import { can, type Area } from "@/lib/access";
+import { getMember } from "@/lib/services/repository";
 import { useState } from "react";
 import {
   ChartNoAxesCombined,
@@ -362,6 +364,23 @@ export function Reports() {
       </div>
       <div className="report-grid">
         {groups
+          .filter((group) =>
+            can(
+              getMember(),
+              (
+                {
+                  CRM: "customers",
+                  Sales: "sales",
+                  Inventory: "inventory",
+                  Finance: "finance",
+                  Service: "service",
+                  Procurement: "procurement",
+                  Tender: "tenders",
+                } as Record<string, Area>
+              )[group.name],
+              "view",
+            ),
+          )
           .filter(
             (g) =>
               g.reports.some((r) =>

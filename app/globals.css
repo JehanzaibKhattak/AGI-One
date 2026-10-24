@@ -4152,3 +4152,81 @@ td input[type="checkbox"] {
     padding: 14px 18px;
   }
 }
+.directory-status {
+  padding: 16px 24px;
+  color: var(--muted);
+}
+.access-matrix {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.access-matrix table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.access-matrix th,
+.access-matrix td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.branch-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 14px 0;
+}
+.team-member-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.relation-picker {
+  position: relative;
+}
+.relation-options {
+  position: absolute;
+  z-index: 30;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #16243c18;
+  max-height: 260px;
+  overflow: auto;
+}
+.relation-options button,
+.relation-options p {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  font-size: 12px;
+}
+.relation-options button:hover,
+.relation-options button:focus {
+  background: #eef3ff;
+}
+.audit-detail {
+  max-width: 520px;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  padding: 12px;
+  background: #f6f8fb;
+  border-radius: 6px;
+}
+
+.customer-directory .toolbar-actions {
+  flex-wrap: wrap;
+}
+.customer-directory .toolbar-actions select {
+  max-width: 100%;
+}
+.relation-options [aria-selected="true"] {
+  background: #eef3ff;
+}

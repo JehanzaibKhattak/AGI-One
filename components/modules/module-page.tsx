@@ -1,4 +1,5 @@
 "use client";
+import { can, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -68,14 +69,16 @@ export function ModulePage({ module }: { module: Module }) {
   const isDoc = ["quotations", "invoices", "purchaseOrders"].includes(
     module.key,
   );
-  const isReadOnly = [
-    "audit",
-    "payments",
-    "journals",
-    "goodsReceipts",
-    "transactions",
-    "deliveries",
-  ].includes(module.key);
+  const isReadOnly =
+    !can(getMember(), collectionArea[module.key], "edit") ||
+    [
+      "audit",
+      "payments",
+      "journals",
+      "goodsReceipts",
+      "transactions",
+      "deliveries",
+    ].includes(module.key);
   const add = () =>
     isDoc ? router.push(module.path + "/new") : setCreate(true);
   const statusTabs = [
@@ -105,7 +108,7 @@ export function ModulePage({ module }: { module: Module }) {
             Transfer stock
           </button>
         )}
-        {getMember().role !== "viewer" &&
+        {can(getMember(), collectionArea[module.key], "create") &&
           ![
             "audit",
             "journals",
@@ -743,7 +746,17 @@ export function ModulePage({ module }: { module: Module }) {
                   <button
                     className={`btn ${s === "Approved" ? "primary" : ""}`}
                     key={s}
-                    disabled={selected.status !== "Pending"}
+                    disabled={
+                      selected.status !== "Pending" ||
+                      !can(
+                        getMember(),
+                        (raw as unknown as { type: string })?.type ===
+                          "expenses"
+                          ? "finance"
+                          : "procurement",
+                        "approve",
+                      )
+                    }
                     onClick={() => {
                       void approveRequest(selected.id, s)
                         .then(() => toast.success(`Request ${s.toLowerCase()}`))

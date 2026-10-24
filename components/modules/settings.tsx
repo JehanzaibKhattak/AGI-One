@@ -45,6 +45,7 @@ export function Settings() {
       >
         <button
           className="btn"
+          disabled={!owner}
           onClick={() =>
             download(
               "agi-one-workspace-export.json",

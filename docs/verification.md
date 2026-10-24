@@ -2,19 +2,25 @@
 
 Verified locally on 25 October 2026 against PostgreSQL 15 and the Next.js 16.4.3 production build.
 
-| Check | Result |
-| --- | --- |
-| Dependency audit after patches | Zero reported vulnerabilities |
-| Unit/regression tests | 13 passed |
-| TypeScript | Passed |
-| ESLint | Passed without warnings |
-| Production build | Passed |
-| Production browser suite | Passed; 30 workspace routes and a 390px mobile viewport |
-| Desktop/mobile visual inspection | Completed; dashboard spacing corrected |
-| Database backup/restore | Full custom-format dump restored into a separate local database, including accounts, workspaces and audit events |
+| Check                         | Result                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Unit/regression tests         | 21 passed                                                                                              |
+| Database integration scenario | Passed: constraints, targeted loading, tenant policies and 2,000-customer branch-scoped pagination     |
+| TypeScript and ESLint         | Passed without warnings                                                                                |
+| Production build              | Passed                                                                                                 |
+| Production browser suites     | 2 passed: CRM/business flows and enterprise access administration                                      |
+| Routes and mobile             | 30 workspace routes, 390px dashboard/customer-directory layouts, keyboard relation selection           |
+| Migration                     | Existing development snapshots backfilled successfully; repeated migration succeeded                   |
+| Database backup/restore       | Record rows, document lines, references, workspaces and audit events restored into a separate database |
 
-The browser suite exercises actual account creation, empty onboarding, persistent customer creation and reload, purchase approval and receiving, quote conversion, stock reservation and delivery, invoice issuance and payment. It verifies rejection of forged delivery status, cross-workspace writes, viewer writes and invitations, untrusted request origins, stale API revisions, stale open forms after background refresh, and simultaneous conflicting edits. It also verifies sign-out, denied requests after sign-out, incorrect passwords and successful password sign-in.
+The CRM browser suite covers real sign-up/sign-in, empty onboarding, persistent customer creation, quote-to-cash, purchasing receipt, inventory protections, conflicting edits and tenant isolation.
 
-Two client-store regressions check that old requests cannot restore a previous account's workspace after sign-out. Test fixtures use generic examples isolated from the application's empty workspace initializer. No former business's dataset is used.
+The administration suite uses separate real accounts to check branch creation, scoped invitations, hidden financial records/navigation, denied exports, allowed and denied branch edits, mid-session permission changes, owner self-revocation protection, ownership transfer, loss of the former owner's administration rights, member revocation/session invalidation and revoked invitation rejection. It also exercises server-filtered exports and keyboard selection of a related organization from a customer-directory bootstrap containing no customer records.
 
-This verification is local, not certification of enterprise readiness. GitHub Actions is configured to repeat the checks with disposable PostgreSQL; its hosted result is separate from the local results above. Production deployment, provider-specific backup scheduling, load testing, email recovery/verification, accounting and privacy/tax compliance remain release work described in [the roadmap](release-roadmap.md).
+The database scenario uses 2,000 generated customer records, checks non-overlapping cursor pages within one branch, verifies forbidden foreign keys and negative stock, and confirms that a customer update loads one customer rather than the complete directory. A temporary non-superuser/NOBYPASSRLS role cannot read, update or insert another workspace's records. These are integrity and bounded-query checks, not a production load/soak benchmark.
+
+Test fixtures are generic and isolated from the empty application initializer. PostgreSQL role-creation tests must run only against a disposable development/CI database. The migration retains the old workspace JSON as a rollback archive; current operations use the record store.
+
+GitHub Actions is configured to repeat unit, database and production browser checks with disposable PostgreSQL 17. Its hosted result is separate from this local verification record.
+
+This is not certification of parity with Salesforce or Microsoft Dynamics 365. See [enterprise release gates](enterprise-release-gates.md) for open work: remaining compatibility reads and workspace-wide concurrency, daily sales productivity, identity/recovery/SSO, integrations, financial posting, production operations and a validated customer pilot.

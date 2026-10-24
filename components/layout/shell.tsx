@@ -1,6 +1,7 @@
 "use client";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { can, collectionArea, areaForPath } from "@/lib/access";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -52,12 +53,7 @@ import {
   getMember,
   clearWorkspace,
 } from "@/lib/services/repository";
-import {
-  modules,
-  moduleFor,
-  displayRows,
-  recordPath,
-} from "@/lib/constants/modules";
+import { modules, moduleFor, recordPath } from "@/lib/constants/modules";
 import { RecordForm } from "@/components/forms/record-form";
 import type { Collection } from "@/types";
 import { dateLabel } from "@/lib/utils";
@@ -172,28 +168,32 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         : path === "/settings"
           ? "Settings"
           : current?.title || "Workspace";
-  const results = [
-    "organizations",
-    "equipment",
-    "invoices",
-    "products",
-    "tickets",
-    "quotations",
-    "orders",
-  ].flatMap((k) => {
-    const key = k as Collection;
-    return displayRows(db, key)
-      .filter(
-        (row) =>
-          query &&
-          Object.values(row)
-            .join(" ")
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      )
-      .slice(0, 5)
-      .map((row) => ({ key, row }));
-  });
+  const [results, setResults] = useState<
+    { key: Collection; row: import("@/lib/constants/modules").DisplayRow }[]
+  >([]);
+  const [searchError, setSearchError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!query.trim()) return;
+    const timer = setTimeout(() => {
+      void fetch("/api/search?q=" + encodeURIComponent(query), {
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error);
+          setSearchError("");
+          setResults(body);
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setSearchError(e.message);
+        });
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
   const nav = (
     <>
       <Link
@@ -227,31 +227,41 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         {groups.map((group) => (
           <div className="nav-group" key={group.label}>
             <div className="nav-label">{group.label}</div>
-            {group.items.map(([label, href, Icon]) => (
-              <Link
-                key={href}
-                title={collapsed ? label : undefined}
-                className={`nav-link ${path === href || (href !== "/crm" && href !== "/inventory" && href !== "/procurement" && href !== "/settings" && path.startsWith(href + "/")) ? "selected" : ""}`}
-                href={href}
-                onClick={() => setMobile(false)}
-              >
-                <Icon size={17} />
-                <span>{label}</span>
-                {label === "Service tickets" && (
-                  <b className="nav-count">
-                    {
-                      db.tickets.filter(
-                        (t) => !["Closed", "Resolved"].includes(t.status),
-                      ).length
-                    }
-                  </b>
-                )}
-                {label === "Approvals" &&
-                  db.approvals.some((a) => a.status === "Pending") && (
-                    <i className="nav-dot" />
+            {group.items
+              .filter(([, href]) => {
+                if (href === "/approvals")
+                  return (
+                    can(getMember(), "procurement", "view") ||
+                    can(getMember(), "finance", "view")
+                  );
+                const area = areaForPath(href);
+                return !area || can(getMember(), area, "view");
+              })
+              .map(([label, href, Icon]) => (
+                <Link
+                  key={href}
+                  title={collapsed ? label : undefined}
+                  className={`nav-link ${path === href || (href !== "/crm" && href !== "/inventory" && href !== "/procurement" && href !== "/settings" && path.startsWith(href + "/")) ? "selected" : ""}`}
+                  href={href}
+                  onClick={() => setMobile(false)}
+                >
+                  <Icon size={17} />
+                  <span>{label}</span>
+                  {label === "Service tickets" && (
+                    <b className="nav-count">
+                      {
+                        db.tickets.filter(
+                          (t) => !["Closed", "Resolved"].includes(t.status),
+                        ).length
+                      }
+                    </b>
                   )}
-              </Link>
-            ))}
+                  {label === "Approvals" &&
+                    db.approvals.some((a) => a.status === "Pending") && (
+                      <i className="nav-dot" />
+                    )}
+                </Link>
+              ))}
           </div>
         ))}
       </nav>
@@ -322,7 +332,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               <span>Search anything…</span>
               <kbd>⌘ K</kbd>
             </button>
-            {getMember().role !== "viewer" && (
+            {quickKeys.some((key) =>
+              can(getMember(), collectionArea[key], "create"),
+            ) && (
               <Menu
                 className="btn primary quick-create"
                 label={
@@ -333,14 +345,18 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                   </>
                 }
               >
-                {quickKeys.map((key) => (
-                  <MenuItem key={key} onClick={() => openCreate(key)}>
-                    <Plus size={14} />
-                    {key === "payments"
-                      ? "Receive payment"
-                      : `New ${moduleFor(key).singular.toLowerCase()}`}
-                  </MenuItem>
-                ))}
+                {quickKeys
+                  .filter((key) =>
+                    can(getMember(), collectionArea[key], "create"),
+                  )
+                  .map((key) => (
+                    <MenuItem key={key} onClick={() => openCreate(key)}>
+                      <Plus size={14} />
+                      {key === "payments"
+                        ? "Receive payment"
+                        : `New ${moduleFor(key).singular.toLowerCase()}`}
+                    </MenuItem>
+                  ))}
               </Menu>
             )}
             <div className="top-divider" />
@@ -414,14 +430,18 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           <input
             autoFocus
             aria-label="Global search"
-            placeholder="Try ST-1098 or STA Compact Max"
+            placeholder="Search a customer, deal or document…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           <kbd>esc</kbd>
         </div>
         <div className="search-results">
-          {!query ? (
+          {searchError ? (
+            <p className="form-error" role="alert">
+              {searchError}
+            </p>
+          ) : !query ? (
             <div className="search-hint">
               <Command size={26} />
               <p>Find a customer, document, product, or service record.</p>

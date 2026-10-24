@@ -12,19 +12,72 @@ import {
 } from "@/lib/server/http";
 import { createEmptyDatabase } from "@/lib/database/empty";
 import { executeCommand } from "@/lib/server/commands";
-import type { Database } from "@/types";
+import { visibleDatabase } from "@/lib/access";
+import {
+  loadDatabase,
+  loadCommandDatabase,
+  changedRecords,
+  persistChanges,
+  assignNumbers,
+} from "@/lib/server/records";
+import {
+  authorizeCommand,
+  branchDatabase,
+  mergeChanges,
+} from "@/lib/server/authorization";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const member = await requireMember(request);
-    const result = await pool.query(
-      "SELECT data, revision FROM agi_workspaces WHERE id=$1",
-      [member.workspace_id],
-    );
+    const client = await pool.connect();
+    let data, revision, branches;
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+      await client.query("SELECT set_config('agi.workspace_id',$1,true)", [
+        member.workspace_id,
+      ]);
+      const row = (
+        await client.query(
+          "SELECT settings,revision FROM agi_workspaces WHERE id=$1",
+          [member.workspace_id],
+        )
+      ).rows[0];
+      data = visibleDatabase(
+        await loadDatabase(
+          client,
+          member.workspace_id,
+          row.settings,
+          member,
+          new URL(request.url).searchParams.get("mode") === "directory",
+        ),
+        member,
+      );
+      revision = row.revision;
+      branches = (
+        await client.query(
+          "SELECT id,name FROM agi_branches WHERE workspace_id=$1 AND ($2::text[]='{}' OR id=ANY($2::text[])) ORDER BY name",
+          [
+            member.workspace_id,
+            member.role === "owner" ? [] : member.branch_ids,
+          ],
+        )
+      ).rows;
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
     return Response.json(
       {
-        ...result.rows[0],
+        data,
+        revision,
         member: {
+          id: member.user.id,
+          grants: member.grants,
+          branch_ids: member.branch_ids,
+          branches,
           name: member.user.name,
           email: member.user.email,
           role: member.role,
@@ -90,8 +143,14 @@ export async function POST(request: Request) {
           "This invitation is invalid or expired, or belongs to another email address.",
         );
       await client.query(
-        "INSERT INTO agi_members(user_id,workspace_id,role) VALUES($1,$2,$3)",
-        [session.user.id, invitation.workspace_id, invitation.role],
+        "INSERT INTO agi_members(user_id,workspace_id,role,grants,branch_ids) VALUES($1,$2,$3,$4,$5)",
+        [
+          session.user.id,
+          invitation.workspace_id,
+          invitation.role,
+          invitation.grants,
+          invitation.branch_ids,
+        ],
       );
     } else {
       const id = randomUUID();
@@ -99,8 +158,13 @@ export async function POST(request: Request) {
       data.settings.currency = body.currency;
       data.settings.timezone = body.timezone;
       await client.query(
-        "INSERT INTO agi_workspaces(id,name,data) VALUES($1,$2,$3)",
-        [id, body.name, JSON.stringify(data)],
+        "INSERT INTO agi_workspaces(id,name,data,settings,storage_version) VALUES($1,$2,$3,$4,1)",
+        [
+          id,
+          body.name,
+          JSON.stringify(createEmptyDatabase(body.name)),
+          JSON.stringify(data.settings),
+        ],
       );
       await client.query(
         "INSERT INTO agi_members(user_id,workspace_id,role) VALUES($1,$2,'owner')",
@@ -132,14 +196,14 @@ export async function PATCH(request: Request) {
     await client.query("BEGIN");
     const row = (
       await client.query(
-        "SELECT data,revision FROM agi_workspaces WHERE id=$1 FOR UPDATE",
+        "SELECT settings,revision FROM agi_workspaces WHERE id=$1 FOR UPDATE",
         [member.workspace_id],
       )
     ).rows[0];
     // Membership is checked again inside the transaction so revoked access cannot write.
     const access = (
       await client.query(
-        "SELECT role FROM agi_members WHERE workspace_id=$1 AND user_id=$2 FOR SHARE",
+        "SELECT role,grants,branch_ids FROM agi_members WHERE workspace_id=$1 AND user_id=$2 FOR SHARE",
         [member.workspace_id, member.user.id],
       )
     ).rows[0];
@@ -150,15 +214,29 @@ export async function PATCH(request: Request) {
         409,
         "Another teammate changed these records. Refresh and try again.",
       );
-    const { data, result } = executeCommand(
-      row.data as Database,
+    await client.query("SELECT set_config('agi.workspace_id',$1,true)", [
+      member.workspace_id,
+    ]);
+    const before = await loadCommandDatabase(
+      client,
+      member.workspace_id,
+      row.settings,
+      body.command,
+    );
+    const executionRole = authorizeCommand(access, body.command, before);
+    const scoped = branchDatabase(before, access);
+    const { data: changed, result } = executeCommand(
+      scoped,
       body.command,
       `${member.user.name} <${member.user.email}>`,
-      access.role,
+      executionRole,
     );
+    const data = mergeChanges(before, changed, access);
+    await assignNumbers(client, member.workspace_id, before, data);
+    await persistChanges(client, member.workspace_id, before, data);
     await client.query(
-      "UPDATE agi_workspaces SET data=$1,revision=revision+1,name=$2 WHERE id=$3",
-      [JSON.stringify(data), data.settings.company, member.workspace_id],
+      "UPDATE agi_workspaces SET revision=revision+1 WHERE id=$1",
+      [member.workspace_id],
     );
     await client.query(
       "INSERT INTO agi_events(id,workspace_id,user_id,action,detail) VALUES($1,$2,$3,$4,$5)",
@@ -171,8 +249,23 @@ export async function PATCH(request: Request) {
       ],
     );
     await client.query("COMMIT");
+    const changes = changedRecords(before, data);
+    const filtered = visibleDatabase(
+      {
+        ...createEmptyDatabase(data.settings.company),
+        ...changes,
+        settings: data.settings,
+      },
+      access,
+    );
+    const responseChanges = { ...changes };
+    for (const collection of Object.keys(
+      responseChanges,
+    ) as (keyof typeof responseChanges)[])
+      if (collection !== "settings")
+        (responseChanges[collection] as unknown) = filtered[collection];
     return Response.json(
-      { data, revision: row.revision + 1, result },
+      { changes: responseChanges, revision: row.revision + 1, result },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

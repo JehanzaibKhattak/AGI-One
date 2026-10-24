@@ -1,5 +1,5 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   getSnapshot,
@@ -13,13 +13,24 @@ export function useDatabase() {
 }
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [state, setState] = useState({ loaded: false, error: "" });
+  const path = usePathname();
+  const mode = [
+    "/crm",
+    "/crm/overview",
+    "/crm/organizations",
+    "/settings/users",
+    "/settings/audit-log",
+    "/settings",
+  ].includes(path)
+    ? "directory"
+    : "full";
+  const [state, setState] = useState({ loaded: false, error: "", mode });
   useEffect(() => {
     let active = true;
     const load = () =>
-      initialize()
+      initialize(mode)
         .then((loaded) => {
-          if (active && loaded) setState({ loaded: true, error: "" });
+          if (active && loaded) setState({ loaded: true, error: "", mode });
         })
         .catch((error: Error) => {
           if (active) {
@@ -40,7 +51,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
     };
-  }, [router]);
+  }, [router, mode]);
   if (state.error)
     return (
       <div className="error-state" role="alert">
@@ -54,7 +65,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         </button>
       </div>
     );
-  if (!state.loaded)
+  if (!state.loaded || state.mode !== mode)
     return (
       <div className="error-state" role="status">
         Opening your workspace…

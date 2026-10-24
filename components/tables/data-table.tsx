@@ -1,4 +1,7 @@
 "use client";
+import { can, collectionArea } from "@/lib/access";
+import { getMember } from "@/lib/services/repository";
+import type { Collection } from "@/types";
 import { useState, useMemo } from "react";
 import {
   useReactTable,
@@ -213,6 +216,10 @@ export function DataTable({
           </Menu>
           <button
             className="btn"
+            disabled={
+              Object.hasOwn(collectionArea, name) &&
+              !can(getMember(), collectionArea[name as Collection], "export")
+            }
             onClick={() =>
               exportCSV(
                 name,

@@ -1,6 +1,7 @@
+import type { Access, Branch } from "@/lib/access";
 import { setBaseCurrency } from "@/lib/utils";
 import { createEmptyDatabase } from "@/lib/database/empty";
-import type { Collection, Entity } from "@/types";
+import type { BaseRecord, Database, Collection, Entity } from "@/types";
 import type { Command } from "./commands";
 export {
   uid,
@@ -19,7 +20,14 @@ const serverDatabase = database;
 let revision = 0;
 let sessionEpoch = 0;
 let loadSequence = 0;
-let member = { name: "", email: "", role: "viewer" };
+type Member = Access & {
+  id?: string;
+  name: string;
+  email: string;
+  branches?: Branch[];
+};
+let member: Member = { name: "", email: "", role: "viewer" };
+let readMode: "full" | "directory" = "full";
 const listeners = new Set<() => void>();
 export const getSnapshot = () => database;
 export const getServerSnapshot = () => serverDatabase;
@@ -43,9 +51,13 @@ export function clearWorkspace() {
   setBaseCurrency("USD");
   notify();
 }
-export async function initialize() {
+export async function initialize(mode: "full" | "directory" = readMode) {
+  readMode = mode;
   const sequence = ++loadSequence;
-  const response = await fetch("/api/workspace", { cache: "no-store" });
+  const response = await fetch(
+    "/api/workspace" + (mode === "directory" ? "?mode=directory" : ""),
+    { cache: "no-store" },
+  );
   if (response.status === 401) throw new WorkspaceAccessError("/login");
   if (response.status === 403) throw new WorkspaceAccessError("/onboarding");
   const body = await response.json();
@@ -71,11 +83,14 @@ function dispatch(
   const next = pending.then(async () => {
     if (epoch !== sessionEpoch || principal !== member.email)
       throw new Error("Your session changed. Please reopen the record.");
-    const response = await fetch("/api/workspace", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ revision: expectedRevision, command }),
-    });
+    const response = await fetch(
+      "/api/workspace" + (readMode === "directory" ? "?mode=directory" : ""),
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: expectedRevision, command }),
+      },
+    );
     const body = await response.json();
     if (!response.ok) {
       if (response.status === 409) await initialize();
@@ -83,7 +98,29 @@ function dispatch(
     }
     if (epoch !== sessionEpoch || principal !== member.email)
       throw new Error("Your session changed. Please reopen the record.");
-    database = body.data;
+    if (body.changes) {
+      const next = structuredClone(database);
+      for (const collection of Object.keys(
+        body.changes,
+      ) as (keyof Database)[]) {
+        if (collection === "settings") {
+          next.settings = body.changes.settings;
+          continue;
+        }
+        if (
+          readMode === "directory" &&
+          !["audit", "notifications"].includes(collection)
+        )
+          continue;
+        const rows = body.changes[collection] as BaseRecord[];
+        const ids = new Set(rows.map((r) => r.id));
+        (next[collection] as BaseRecord[]) = [
+          ...rows,
+          ...(next[collection] as BaseRecord[]).filter((r) => !ids.has(r.id)),
+        ];
+      }
+      database = next;
+    } else database = body.data;
     setBaseCurrency(database.settings.currency);
     revision = body.revision;
     notify();

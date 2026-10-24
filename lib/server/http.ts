@@ -1,3 +1,4 @@
+import type { Grants } from "@/lib/access";
 import { auth } from "./auth";
 import { pool } from "./db";
 import { HttpError } from "./errors";
@@ -12,9 +13,12 @@ export async function requireMember(request: Request) {
   const result = await pool.query<{
     workspace_id: string;
     role: "owner" | "editor" | "viewer";
-  }>("SELECT workspace_id, role FROM agi_members WHERE user_id=$1", [
-    session.user.id,
-  ]);
+    grants: Grants;
+    branch_ids: string[];
+  }>(
+    "SELECT workspace_id, role, grants, branch_ids FROM agi_members WHERE user_id=$1",
+    [session.user.id],
+  );
   if (!result.rows[0])
     throw new HttpError(403, "Create or join a workspace first.");
   return { ...result.rows[0], user: session.user };
@@ -51,6 +55,23 @@ export async function readBody(request: Request) {
   }
 }
 export function errorResponse(error: unknown) {
+  const code = (error as { code?: string })?.code;
+  if (code === "23505")
+    return Response.json(
+      {
+        error:
+          "This identifier is already in use. Refresh and choose a unique value.",
+      },
+      { status: 409 },
+    );
+  if (["23503", "23514", "22P02"].includes(code || ""))
+    return Response.json(
+      {
+        error:
+          "The record has invalid values or references. Check the linked records and try again.",
+      },
+      { status: 400 },
+    );
   if (error instanceof HttpError)
     return Response.json({ error: error.message }, { status: error.status });
   console.error(

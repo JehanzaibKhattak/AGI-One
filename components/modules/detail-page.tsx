@@ -1,4 +1,5 @@
 "use client";
+import { can, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -27,6 +28,7 @@ import { RecordForm } from "@/components/forms/record-form";
 import { useDatabase } from "@/lib/services/provider";
 import {
   repository,
+  getMember,
   ticketAction,
   customerBalance,
   invoiceBalance,
@@ -699,27 +701,28 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
           description={`${module.singular} · ${String(data.code || data.serial || id)}${org ? " · " + org.city : ""}`}
         >
           <Badge>{record!.status}</Badge>
-          {![
-            "payments",
-            "orders",
-            "journals",
-            "goodsReceipts",
-            "transactions",
-            "deliveries",
-            "audit",
-          ].includes(module.key) && (
-            <button
-              className="btn"
-              onClick={() =>
-                isDoc
-                  ? router.push(recordPath(module.key, id) + "/edit")
-                  : setEdit(true)
-              }
-            >
-              <Pencil size={15} />
-              Edit details
-            </button>
-          )}
+          {can(getMember(), collectionArea[module.key], "edit") &&
+            ![
+              "payments",
+              "orders",
+              "journals",
+              "goodsReceipts",
+              "transactions",
+              "deliveries",
+              "audit",
+            ].includes(module.key) && (
+              <button
+                className="btn"
+                onClick={() =>
+                  isDoc
+                    ? router.push(recordPath(module.key, id) + "/edit")
+                    : setEdit(true)
+                }
+              >
+                <Pencil size={15} />
+                Edit details
+              </button>
+            )}
           {module.key === "organizations" && (
             <Link
               className="btn primary"

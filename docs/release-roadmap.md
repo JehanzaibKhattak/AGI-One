@@ -11,13 +11,18 @@
 - Live dashboard/report inputs and correct draft-invoice receivable treatment.
 - Removal of fabricated financial statements, mock permission controls and simulated attachment uploads.
 - Workflow regression tests and production-build browser checks in CI.
+- Indexed record storage, relational document lines and record references, unique database constraints and tenant row policies.
+- Targeted command loading, changed-record writes and bounded mutation responses.
+- Granular module grants, branch scopes, branch creation, member/invitation revocation and ownership transfer.
+- Cursor-paginated customer directory, server search, relation lookups and protected exports.
+- Paginated administration/business audit trail.
 
 ## Required before a live client pilot
 
 1. Provision production and staging PostgreSQL, HTTPS domains, least-privilege database access and managed secrets. Run migrations as a separate deployment step.
 2. Configure verified email, account recovery and reliable transactional email. Add MFA/SSO if required by the pilot's security policy. Resolve identity assurance before external team rollout.
-3. Normalize business records into indexed relational tables with database foreign keys and unique constraints; replace whole-workspace reads with paginated, permission-scoped queries. Measure load and storage limits with representative client data.
-4. Add branch and module permissions, member revocation, ownership transfer and a governed workspace switching model. Current roles grant broad workspace read access, including finance and exports.
+3. Replace remaining full-projection reads in legacy modules and reports with scoped queries and aggregates. Introduce per-record concurrency where appropriate. Measure production-like load, query plans, storage and recovery limits.
+4. Add governed workspace switching, field-level sharing and branch reassignment workflows. Validate role templates and exception policies with pilot administrators.
 5. Finish inventory returns/adjustments, partial receiving/delivery, serial/lot/expiry allocation, purchasing tax and landed-cost posting. Validate real warehouse workflows with the client.
 6. Integrate a proven accounting system or implement balanced journal posting, supplier bills, credit notes/reversals, currency precision rules and validated tax treatment. Current finance totals do not replace accounting.
 7. Implement file storage with private access, upload limits, scanning and retention; then enable attachments. Add background reminders and an observable delivery/retry mechanism.
@@ -41,3 +46,5 @@ Prioritize these using customer evidence rather than claiming feature parity:
 ## Release acceptance
 
 Demonstrate quote → approval → reservation → delivery → invoice → payment, plus purchase receipt and service-part consumption, using simultaneous accounts and realistic data. Prove denied access, cross-workspace isolation, stale-edit handling, backup restoration and reconciled financial outputs. A passing local build alone is not release acceptance or competitive parity.
+
+See [enterprise release gates](enterprise-release-gates.md) for concrete evidence and current limits.
