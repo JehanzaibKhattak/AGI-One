@@ -44,6 +44,12 @@ Commands load their target records and dependencies, run inside a database trans
 
 Some legacy screens still request a complete authorized projection. Workspace-level revision checks still serialize/conflict unrelated edits. These remain scale limits, alongside the need for realistic production load measurements; see [enterprise release gates](docs/enterprise-release-gates.md).
 
+## Sales workspace
+
+Lead qualification and atomic customer/contact/opportunity conversion, assigned tasks with in-app reminders, owner-configured sales pipelines and permission-scoped forecasting are available. Sales directories use server pagination and forecasts use SQL aggregation. See [sales workflow behavior and limits](docs/sales-workspace.md).
+
+Microsoft 365 provides an optional, personal, read-only view of inbox headers and upcoming calendar meetings. An Entra app registration and server-side secrets are required before connecting accounts; follow [Microsoft 365 setup](docs/microsoft-365.md). Stored credentials are encrypted and removed on disconnect or membership revocation. No email sending, calendar writes or background synchronization is enabled.
+
 ## Verification
 
 ```sh

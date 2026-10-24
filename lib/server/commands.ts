@@ -1,3 +1,9 @@
+import {
+  convertLead,
+  configurePipeline,
+  stageSchema,
+  stageFor,
+} from "@/lib/services/sales";
 import { z } from "zod";
 import { modules } from "@/lib/constants/modules";
 import { createEngine, purchaseTotal } from "@/lib/services/engine";
@@ -22,6 +28,18 @@ const schema = z.discriminatedUnion("action", [
     ]),
   }),
   z.object({ action: z.literal("convertQuotation"), id }),
+  z.object({
+    action: z.literal("convertLead"),
+    id,
+    organizationId: id.optional(),
+    pipelineId: id,
+  }),
+  z.object({
+    action: z.literal("configurePipeline"),
+    id,
+    name: z.string().trim().min(1).max(100),
+    stages: stageSchema,
+  }),
   z.object({
     action: z.literal("orderAction"),
     id,
@@ -80,9 +98,38 @@ export function validateRecord(
   z.object({
     id,
     name: z.string().trim().min(1).max(500),
-    status: z.enum(definition.statuses as [string, ...string[]]),
+    status:
+      collection === "opportunities"
+        ? z.string().min(1)
+        : z.enum(definition.statuses as [string, ...string[]]),
     createdAt: z.string().min(1),
   }).parse(row);
+  if (collection === "opportunities") {
+    const stage = stageFor(db, row as unknown as Entity<"opportunities">);
+    if (
+      !stage ||
+      stage.name !== row.status ||
+      stage.probability !== row.probability
+    )
+      throw new Error(
+        "Select a pipeline stage and its configured probability.",
+      );
+  }
+  if (collection === "tasks") {
+    z.iso.datetime().parse(row.dueAt);
+    if (row.reminderAt) z.iso.datetime().parse(row.reminderAt);
+    const due = Date.parse(String(row.dueAt)),
+      reminder = row.reminderAt
+        ? Date.parse(String(row.reminderAt))
+        : undefined;
+    if (
+      !Number.isFinite(due) ||
+      (reminder !== undefined && (!Number.isFinite(reminder) || reminder > due))
+    )
+      throw new Error("Set a valid reminder at or before the due time.");
+    if (!["Normal", "High", "Urgent"].includes(String(row.priority)))
+      throw new Error("Choose a valid task priority.");
+  }
   for (const field of definition.fields) {
     const value = row[field.key];
     if (field.required && (value === undefined || value === ""))
@@ -97,7 +144,10 @@ export function validateRecord(
     else if (field.type === "checkbox") z.boolean().parse(value);
     else z.string().max(10000).parse(value);
     if (field.type === "email") z.email().parse(value);
-    if (field.type === "date" && !Number.isFinite(Date.parse(String(value))))
+    if (
+      ["date", "datetime-local"].includes(field.type || "") &&
+      !Number.isFinite(Date.parse(String(value)))
+    )
       throw new Error(`${field.label} must be a valid date.`);
     if (field.relation) {
       const linked = (
@@ -196,11 +246,48 @@ export function executeCommand(
   let result: unknown;
   try {
     switch (command.action) {
+      case "convertLead":
+        return convertLead(
+          db,
+          command.id,
+          command.organizationId,
+          command.pipelineId,
+          actor,
+        );
+      case "configurePipeline":
+        if (role !== "owner")
+          throw new HttpError(403, "Only the owner can configure pipelines.");
+        return configurePipeline(
+          db,
+          command.id,
+          command.name,
+          command.stages,
+          actor,
+        );
       case "create": {
+        if (command.collection === "pipelines")
+          throw new Error("Use pipeline configuration.");
+        if (
+          command.collection === "leads" &&
+          command.record.status === "Converted"
+        )
+          throw new Error("Use lead conversion.");
         if (command.collection === "approvals")
           throw new Error(
             "Approval requests are created by the submission workflow.",
           );
+        if (
+          command.collection === "leads" &&
+          ["organizationId", "contactId", "opportunityId"].some(
+            (k) => (command.record as unknown as Record<string, unknown>)[k],
+          )
+        )
+          throw new Error("Use lead conversion to link records.");
+        if (command.collection === "opportunities")
+          (command.record as Entity<"opportunities">).salesOutcome = stageFor(
+            db,
+            command.record as Entity<"opportunities">,
+          )?.outcome;
         validateRecord(db, command.collection, command.record);
         if (command.collection === "orders")
           throw new Error("Create orders by converting a quotation.");
@@ -252,6 +339,8 @@ export function executeCommand(
         break;
       }
       case "update": {
+        if (command.collection === "pipelines")
+          throw new Error("Use pipeline configuration.");
         const current = (
           db[command.collection] as Entity<Collection>[] | undefined
         )?.find((r) => r.id === command.id);
@@ -263,7 +352,18 @@ export function executeCommand(
           command.values.createdAt !== current.createdAt
         )
           throw new Error("Creation dates cannot change.");
+        if (
+          command.collection === "leads" &&
+          (current.status === "Converted" ||
+            command.values.status === "Converted")
+        )
+          throw new Error(
+            "Converted leads are locked; use the linked customer and opportunity.",
+          );
         const editable = new Set([
+          ...(command.collection === "opportunities"
+            ? ["pipelineId", "stageId", "salesOutcome"]
+            : []),
           "name",
           "notes",
           ...modules
@@ -354,6 +454,12 @@ export function executeCommand(
               "Only the owner can mark an approved expense paid.",
             );
         }
+        if (command.collection === "opportunities")
+          (command.values as Partial<Entity<"opportunities">>).salesOutcome =
+            stageFor(db, {
+              ...current,
+              ...command.values,
+            } as Entity<"opportunities">)?.outcome;
         const next = { ...current, ...command.values };
         validateRecord(db, command.collection, next);
         if (

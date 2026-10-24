@@ -3,6 +3,9 @@ import type { Database } from "@/types";
 /** New workspaces contain configuration only, never another business's records. */
 export function createEmptyDatabase(company = "My workspace"): Database {
   return {
+    leads: [],
+    tasks: [],
+    pipelines: [],
     organizations: [],
     contacts: [],
     opportunities: [],

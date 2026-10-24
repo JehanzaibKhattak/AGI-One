@@ -16,6 +16,8 @@
 - Granular module grants, branch scopes, branch creation, member/invitation revocation and ownership transfer.
 - Cursor-paginated customer directory, server search, relation lookups and protected exports.
 - Paginated administration/business audit trail.
+- Lead qualification and atomic conversion, assigned tasks with personal in-app reminders, configurable multi-pipeline stages and scoped sales forecasts.
+- Microsoft 365 OAuth/read-only connection implementation and encrypted credentials; live app registration/consent verification remains required.
 
 ## Required before a live client pilot
 
@@ -34,9 +36,9 @@
 
 Prioritize these using customer evidence rather than claiming feature parity:
 
-- Lead capture and qualification, task queues, reminders, timelines and sales forecasting.
-- Connected email/calendar, logged communication and governed WhatsApp/telephony integrations.
-- Configurable fields, pipelines, forms, approval policies and automation.
+- Extend the implemented lead/task/pipeline/forecast workflows with customer-tested timelines, forecast submissions, quotas and background notifications.
+- Activate and live-test Microsoft 365, then add shared communication logging and pilot-selected Google/WhatsApp/telephony integrations.
+- Extend configurable pipelines with custom fields, forms, approval policies and automation.
 - Customer portals, knowledge base, service-level policies and dispatch/mobile workflows.
 - API/webhooks, integration authentication, rate limits and developer documentation.
 - Saved reports, consistent metrics, forecast snapshots and permission-aware analytics.

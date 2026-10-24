@@ -16,6 +16,8 @@ export type ListQuery = {
   branchId?: string;
   organizationId?: string;
   id?: string;
+  pipelineId?: string;
+  assigneeId?: string;
 };
 export async function listRecords(
   client: PoolClient,
@@ -57,6 +59,9 @@ export async function listRecords(
   if (query.organizationId)
     add("r.data->>'organizationId'=?", query.organizationId);
   if (query.id) add("r.id=?", query.id);
+  if (query.pipelineId)
+    add("coalesce(r.data->>'pipelineId','default')=?", query.pipelineId);
+  if (query.assigneeId) add("r.data->>'assigneeId'=?", query.assigneeId);
   const total = Number(
     (
       await client.query(
@@ -89,7 +94,7 @@ export async function listRecords(
   if (collection === "organizations") {
     computed += ` || jsonb_build_object('contact',coalesce((SELECT c.name FROM agi_records c WHERE c.workspace_id=r.workspace_id AND c.collection='contacts' AND c.data->>'organizationId'=r.id AND ($3::boolean OR c.branch_id=ANY($4::text[])) ORDER BY c.name LIMIT 1),''))`;
     if (can(access, "sales", "view"))
-      computed += ` || jsonb_build_object('opportunities',(SELECT count(*) FROM agi_records o WHERE o.workspace_id=r.workspace_id AND o.collection='opportunities' AND o.data->>'organizationId'=r.id AND o.status NOT IN ('Won','Lost') AND ($3::boolean OR o.branch_id=ANY($4::text[]))))`;
+      computed += ` || jsonb_build_object('opportunities',(SELECT count(*) FROM agi_records o WHERE o.workspace_id=r.workspace_id AND o.collection='opportunities' AND o.data->>'organizationId'=r.id AND coalesce(o.data->>'salesOutcome',CASE WHEN o.status='Won' THEN 'won' WHEN o.status='Lost' THEN 'lost' ELSE 'open' END)='open' AND ($3::boolean OR o.branch_id=ANY($4::text[]))))`;
     if (can(access, "finance", "view"))
       computed += ` || jsonb_build_object('balance',coalesce((SELECT sum(greatest(0,coalesce((SELECT round(sum(l.quantity*l.unit_price*(1-l.discount/100)*(1+l.tax/100)),2) FROM agi_document_lines l WHERE l.workspace_id=i.workspace_id AND l.collection='invoices' AND l.record_id=i.id),0)-coalesce((SELECT sum((p.data->>'amount')::numeric) FROM agi_records p WHERE p.workspace_id=i.workspace_id AND p.collection='payments' AND p.data->>'invoiceId'=i.id),0))) FROM agi_records i WHERE i.workspace_id=r.workspace_id AND i.collection='invoices' AND i.data->>'organizationId'=r.id AND i.status NOT IN ('Draft','Cancelled') AND ($3::boolean OR i.branch_id=ANY($4::text[]))),0))`;
   }

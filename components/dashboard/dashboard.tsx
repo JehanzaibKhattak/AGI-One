@@ -1,4 +1,5 @@
 "use client";
+import { opportunityOutcome } from "@/lib/services/sales";
 import { can, areaForPath, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
@@ -40,7 +41,7 @@ export function Dashboard() {
     0,
   );
   const pipeline = db.opportunities.filter(
-    (o) => !["Won", "Lost"].includes(o.status),
+    (o) => opportunityOutcome(o) === "open",
   );
   const trend = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(`${to}T12:00:00Z`);

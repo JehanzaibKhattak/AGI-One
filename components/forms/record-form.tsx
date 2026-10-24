@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -48,14 +48,40 @@ export function RecordForm({
   const [error, setError] = useState("");
   const [editRevision] = useState(getRevision);
   const fields = module.fields;
+  const [teammates, setTeammates] = useState<{ id: string; name: string }[]>(
+    [],
+  );
+  useEffect(() => {
+    if (module.key !== "tasks") return;
+    const controller = new AbortController();
+    fetch("/api/sales/meta", { signal: controller.signal })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error);
+        setTeammates(body.members);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message);
+      });
+    return () => controller.abort();
+  }, [module.key]);
+  const pipelineId = String(
+    (record as Entity<"opportunities"> | undefined)?.pipelineId ||
+      defaults.pipelineId ||
+      "default",
+  );
+  const [selectedPipeline, setSelectedPipeline] = useState(pipelineId);
+  const pipeline = db.pipelines.find((p) => p.id === selectedPipeline);
   const initial: Record<string, unknown> = Object.fromEntries(
     fields.map((f) => [
       f.key,
       (["owner", "receivedBy", "requestedBy"].includes(f.key)
         ? getMember().name
-        : f.type === "date"
-          ? today(db.settings.timezone)
-          : f.default) ??
+        : f.key === "assigneeId"
+          ? getMember().id
+          : f.type === "date"
+            ? today(db.settings.timezone)
+            : f.default) ??
         (f.type === "checkbox" ? false : f.type === "number" ? 0 : ""),
     ]),
   );
@@ -65,6 +91,23 @@ export function RecordForm({
       status: module.statuses[0],
       ...defaults,
       ...record,
+      ...Object.fromEntries(
+        fields
+          .filter((f) => f.type === "datetime-local")
+          .map((f) => {
+            const raw = (
+              record as unknown as Record<string, unknown> | undefined
+            )?.[f.key];
+            if (!raw) return [f.key, ""];
+            const date = new Date(String(raw));
+            return [
+              f.key,
+              new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+                .toISOString()
+                .slice(0, 16),
+            ];
+          }),
+      ),
     },
   });
   const values = useWatch({ control: form.control });
@@ -82,12 +125,26 @@ export function RecordForm({
       return;
     }
     try {
+      for (const field of fields.filter((f) => f.type === "datetime-local"))
+        if ((result.data as Record<string, unknown>)[field.key])
+          (result.data as Record<string, unknown>)[field.key] = new Date(
+            String((result.data as Record<string, unknown>)[field.key]),
+          ).toISOString();
       const data = {
         ...result.data,
         branchId: String(input.branchId || record?.branchId || "") || undefined,
         id: record?.id || uid(module.key),
         createdAt: record?.createdAt || new Date().toISOString(),
       } as Entity<Collection>;
+      if (module.key === "opportunities") {
+        const stage = pipeline?.stages.find((s) => s.name === data.status);
+        if (!stage) throw new Error("Choose a pipeline stage.");
+        Object.assign(data, {
+          pipelineId: selectedPipeline,
+          stageId: stage.id,
+          probability: stage.probability,
+        });
+      }
       if (module.key === "tickets")
         Object.assign(data, {
           parts: record && "parts" in record ? record.parts : [],
@@ -154,80 +211,123 @@ export function RecordForm({
               </select>
             </label>
           )}
-          {fields.map((field) => {
-            let options = field.relation
-              ? (
-                  db[field.relation] as (BaseRecord & {
-                    organizationId?: string;
-                  })[]
-                )
-                  .filter(
-                    (r) =>
-                      !r.organizationId ||
-                      !values.organizationId ||
-                      r.organizationId === values.organizationId,
-                  )
-                  .map((r) => ({ value: r.id, label: r.name }))
-              : field.options?.map((v) => ({ value: v, label: v }));
-            if (field.key === "invoiceId")
-              options = options?.filter(
-                (o) =>
-                  db.invoices.find((i) => i.id === o.value)?.status !==
-                  "Cancelled",
-              );
-            return (
-              <label
-                className={field.type === "textarea" ? "field full" : "field"}
-                key={field.key}
+          {module.key === "opportunities" && (
+            <label className="field">
+              <span>Pipeline</span>
+              <select
+                value={selectedPipeline}
+                onChange={(e) => {
+                  setSelectedPipeline(e.target.value);
+                  form.setValue(
+                    "status",
+                    db.pipelines.find((p) => p.id === e.target.value)?.stages[0]
+                      .name || "",
+                  );
+                }}
               >
-                <span>
-                  {field.label}
-                  {field.required && <b className="required"> *</b>}
-                </span>
-                {field.relation ? (
-                  <RelationPicker
-                    collection={field.relation}
-                    label={field.label}
-                    value={String(values[field.key] || "")}
-                    organizationId={
-                      field.relation === "organizations"
-                        ? undefined
-                        : String(values.organizationId || "") || undefined
-                    }
-                    onChange={(id) => form.setValue(field.key, id)}
-                  />
-                ) : field.type === "select" ? (
-                  <select {...form.register(field.key)}>
-                    <option value="">Select {field.label.toLowerCase()}</option>
-                    {options?.map((o) => (
-                      <option value={o.value} key={o.value}>
-                        {o.label}
+                {db.pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {fields
+            .filter(
+              (f) =>
+                !(module.key === "opportunities" && f.key === "probability"),
+            )
+            .map((field) => {
+              let options = field.relation
+                ? (
+                    db[field.relation] as (BaseRecord & {
+                      organizationId?: string;
+                    })[]
+                  )
+                    .filter(
+                      (r) =>
+                        !r.organizationId ||
+                        !values.organizationId ||
+                        r.organizationId === values.organizationId,
+                    )
+                    .map((r) => ({ value: r.id, label: r.name }))
+                : field.options?.map((v) => ({ value: v, label: v }));
+              if (field.key === "assigneeId")
+                options = teammates.map((m) => ({
+                  value: m.id,
+                  label: m.name,
+                }));
+              if (field.key === "invoiceId")
+                options = options?.filter(
+                  (o) =>
+                    db.invoices.find((i) => i.id === o.value)?.status !==
+                    "Cancelled",
+                );
+              return (
+                <label
+                  className={field.type === "textarea" ? "field full" : "field"}
+                  key={field.key}
+                >
+                  <span>
+                    {field.label}
+                    {field.required && <b className="required"> *</b>}
+                  </span>
+                  {field.relation ? (
+                    <RelationPicker
+                      collection={field.relation}
+                      label={field.label}
+                      value={String(values[field.key] || "")}
+                      organizationId={
+                        field.relation === "organizations"
+                          ? undefined
+                          : String(values.organizationId || "") || undefined
+                      }
+                      onChange={(id) => form.setValue(field.key, id)}
+                    />
+                  ) : field.type === "select" ? (
+                    <select
+                      aria-label={field.label}
+                      {...form.register(field.key)}
+                      value={String(values[field.key] || "")}
+                    >
+                      <option value="">
+                        Select {field.label.toLowerCase()}
                       </option>
-                    ))}
-                  </select>
-                ) : field.type === "textarea" ? (
-                  <textarea rows={3} {...form.register(field.key)} />
-                ) : (
-                  <input
-                    type={field.type || "text"}
-                    step={field.type === "number" ? "0.01" : undefined}
-                    {...form.register(field.key)}
-                  />
-                )}{" "}
-                {form.formState.errors[field.key] && (
-                  <small className="field-error">
-                    {String(form.formState.errors[field.key]?.message)}
-                  </small>
-                )}
-              </label>
-            );
-          })}
+                      {options?.map((o) => (
+                        <option value={o.value} key={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : field.type === "textarea" ? (
+                    <textarea rows={3} {...form.register(field.key)} />
+                  ) : (
+                    <input
+                      type={field.type || "text"}
+                      step={field.type === "number" ? "0.01" : undefined}
+                      {...form.register(field.key)}
+                    />
+                  )}{" "}
+                  {form.formState.errors[field.key] && (
+                    <small className="field-error">
+                      {String(form.formState.errors[field.key]?.message)}
+                    </small>
+                  )}
+                </label>
+              );
+            })}
           {module.statuses.length > 1 &&
             !["orders", "purchaseOrders", "invoices"].includes(module.key) && (
               <label className="field">
                 <span>Status</span>
                 <select {...form.register("status")}>
-                  {module.statuses.map((s) => (
+                  {(module.key === "opportunities"
+                    ? pipeline?.stages.map((s) => s.name) || []
+                    : module.statuses.filter(
+                        (s) => module.key !== "leads" || s !== "Converted",
+                      )
+                  ).map((s) => (
                     <option key={s}>{s}</option>
                   ))}
                 </select>

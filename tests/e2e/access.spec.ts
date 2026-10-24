@@ -222,6 +222,71 @@ test("owners manage scoped access, finance privacy, invitations, revocation and 
   const agentId = (
     await (await page.request.get("/api/members")).json()
   ).members.find((member: { email: string }) => member.email === agentEmail).id;
+  for (const branchId of [north, south]) {
+    const response = await mutate(page.request, {
+      action: "create",
+      collection: "opportunities",
+      record: {
+        id: "deal-" + branchId,
+        name: "Branch deal",
+        status: "New Lead",
+        createdAt: new Date().toISOString(),
+        organizationId:
+          branchId === north ? "north-customer" : "south-customer",
+        contactId: "",
+        productId: "",
+        value: branchId === north ? 1000 : 9000,
+        closeDate: "2026-10-31",
+        owner: "Seller",
+        probability: 10,
+        nextActivity: "",
+        pipelineId: "default",
+        stageId: "new",
+      },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+  }
+  const scopedForecast = await (
+    await agent.request.get("/api/sales/forecast?from=2026-10-01&to=2026-10-31")
+  ).json();
+  expect(
+    scopedForecast.groups.reduce(
+      (sum: number, g: { value: number }) => sum + g.value,
+      0,
+    ),
+  ).toBe(1000);
+  const outsideForecast = await (
+    await agent.request.get(
+      "/api/sales/forecast?from=2026-10-01&to=2026-10-31&branchId=" + south,
+    )
+  ).json();
+  expect(outsideForecast.groups).toEqual([]);
+  expect(
+    (
+      await mutate(agent.request, {
+        action: "configurePipeline",
+        id: "default",
+        name: "Forbidden",
+        stages: [],
+      })
+    ).status(),
+  ).toBe(403);
+  const forbiddenTask = await mutate(page.request, {
+    action: "create",
+    collection: "tasks",
+    record: {
+      id: "outside-task",
+      name: "Outside assignment",
+      status: "Open",
+      createdAt: new Date().toISOString(),
+      assigneeId: agentId,
+      dueAt: "2026-10-31T10:00:00.000Z",
+      reminderAt: "",
+      priority: "Normal",
+      organizationId: "south-customer",
+    },
+  });
+  expect(forbiddenTask.status()).toBe(400);
   expect(
     (
       await page.request.patch("/api/members", {

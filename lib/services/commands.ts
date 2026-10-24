@@ -1,5 +1,17 @@
 import type { Collection, Entity } from "@/types";
 export type Command =
+  | {
+      action: "convertLead";
+      id: string;
+      organizationId?: string;
+      pipelineId: string;
+    }
+  | {
+      action: "configurePipeline";
+      id: string;
+      name: string;
+      stages: import("@/types").PipelineStage[];
+    }
   | { action: "create"; collection: Collection; record: Entity<Collection> }
   | {
       action: "update";

@@ -319,7 +319,175 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
       })
     ).status(),
   ).toBe(403);
+  const currentCustomerName = (
+    await (await page.request.get("/api/workspace")).json()
+  ).data.organizations.find((o: { id: string }) => o.id === customerId).name;
+  // The sales milestone uses the same real account and transaction path as the CRM.
+  await page.goto("/sales/leads");
+  await page.getByRole("button", { name: "New lead", exact: true }).click();
+  await dialog.getByLabel("Name", { exact: false }).fill("Alex Buyer");
+  await dialog.getByLabel("Company", { exact: false }).fill("Example prospect");
+  await dialog.getByLabel("Email", { exact: false }).fill("alex@example.com");
+  await dialog.getByLabel("Expected value").fill("1000");
+  await dialog.getByLabel("Expected close").fill("2026-10-31");
+  await dialog.getByLabel("Status").selectOption("Qualified");
+  await dialog
+    .getByRole("button", { name: "Create lead", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Convert lead", exact: true }).click();
+  await dialog
+    .getByRole("combobox", { name: "Existing customer", exact: true })
+    .fill(currentCustomerName);
+  await dialog
+    .getByRole("option", { name: currentCustomerName, exact: true })
+    .click();
+  await dialog
+    .getByRole("button", {
+      name: "Convert to customer & opportunity",
+      exact: true,
+    })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("table").getByText("Converted", { exact: true }),
+  ).toBeVisible();
+  let salesState = await (await page.request.get("/api/workspace")).json();
+  const lead = salesState.data.leads[0],
+    deal = salesState.data.opportunities[0];
+  expect(lead.opportunityId).toBe(deal.id);
+  expect(deal.value).toBe(1000);
+  expect(
+    (
+      await mutate({
+        action: "convertLead",
+        id: lead.id,
+        pipelineId: "default",
+      })
+    ).status(),
+  ).toBe(400);
+  const forecast = await (
+    await page.request.get("/api/sales/forecast?from=2026-10-01&to=2026-10-31")
+  ).json();
+  expect(forecast.groups[0].weighted).toBe(100);
+  await page.goto("/sales/pipelines");
+  await page
+    .getByRole("button", { name: "Edit Sales pipeline", exact: true })
+    .click();
+  await dialog.getByLabel("Stage 1", { exact: true }).fill("Discovery");
+  await dialog.getByLabel("Probability %", { exact: true }).first().fill("30");
+  await dialog
+    .getByRole("button", { name: "Save pipeline", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  salesState = await (await page.request.get("/api/workspace")).json();
+  expect(salesState.data.opportunities[0].status).toBe("Discovery");
+  expect(
+    (
+      await (
+        await page.request.get(
+          "/api/sales/forecast?from=2026-10-01&to=2026-10-31",
+        )
+      ).json()
+    ).groups[0].weighted,
+  ).toBe(300);
+  await page.goto("/sales/opportunities");
+  await page.getByLabel(`Stage for ${deal.name}`).selectOption("won");
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get("/api/workspace")).json()).data
+          .opportunities[0].salesOutcome,
+    )
+    .toBe("won");
+  await page.goto("/sales/tasks");
+  await page.getByRole("button", { name: "New task", exact: true }).click();
+  await dialog.getByLabel("Name", { exact: false }).fill("Follow up with Alex");
+  await expect(dialog.getByLabel("Assigned to")).toHaveValue(
+    salesState.member.id,
+  );
+  await dialog.getByLabel("Due at").fill("2020-01-02T10:00");
+  await dialog.getByLabel("Remind at").fill("2020-01-01T10:00");
+  await dialog
+    .getByRole("button", { name: "Create task", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("status").filter({ hasText: "task reminder" }),
+  ).toBeVisible();
+  expect(
+    (await (await page.request.get("/api/sales/reminders")).json()).total,
+  ).toBe(1);
+  const task = (await (await page.request.get("/api/workspace")).json()).data
+    .tasks[0];
+  expect(
+    (
+      await mutate({
+        action: "update",
+        collection: "tasks",
+        id: task.id,
+        values: { assigneeId: "outside-workspace" },
+      })
+    ).status(),
+  ).toBe(400);
+  await page.getByRole("button", { name: "Complete", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get("/api/sales/reminders")).json()).total,
+    )
+    .toBe(0);
+  await page.goto("/sales/forecast");
+  await page.getByLabel("Close from").fill("2026-10-01");
+  await page.getByLabel("Close through").fill("2026-10-31");
+  await expect(
+    page.locator(".stat").filter({ hasText: "Closed won" }),
+  ).toContainText("1,000");
+  await page.screenshot({
+    path: "test-results/agi-one-sales-forecast.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/sales/tasks");
+  await expect(
+    page.getByRole("heading", { name: "Tasks & reminders", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(
+    page.getByRole("table").getByText("Follow up with Alex", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/agi-one-tasks-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/sales/connections");
+  await expect(
+    page.getByRole("button", { name: "Connect Microsoft 365", exact: true }),
+  ).toBeDisabled();
+  expect(
+    (
+      await page.request.post("/api/connections/microsoft", {
+        headers: { Origin: origin },
+      })
+    ).status(),
+  ).toBe(503);
+  const badCallback = await page.request.get(
+    "/api/connections/microsoft/callback?state=invalid&code=invalid",
+    { maxRedirects: 0 },
+  );
+  expect(badCallback.status()).toBe(303);
+  expect(badCallback.headers().location).toContain("connection=failed");
   const routes = [
+    "/sales/leads",
+    "/sales/tasks",
+    "/sales/pipelines",
+    "/sales/forecast",
+    "/sales/connections",
     "/dashboard",
     "/crm",
     "/crm/contacts",

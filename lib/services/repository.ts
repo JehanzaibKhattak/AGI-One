@@ -109,7 +109,7 @@ function dispatch(
         }
         if (
           readMode === "directory" &&
-          !["audit", "notifications"].includes(collection)
+          !["audit", "notifications", "pipelines"].includes(collection)
         )
           continue;
         const rows = body.changes[collection] as BaseRecord[];
@@ -180,3 +180,8 @@ export const markNotifications = (id?: string) =>
   dispatch({ action: "markNotifications", id });
 export const addNote = (collection: Collection, id: string, note: string) =>
   dispatch({ action: "addNote", collection, id, note });
+
+export const salesCommand = (
+  command: Extract<Command, { action: "convertLead" | "configurePipeline" }>,
+  expectedRevision?: number,
+) => dispatch(command, expectedRevision);

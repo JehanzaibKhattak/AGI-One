@@ -49,7 +49,40 @@ export interface Contact extends BaseRecord {
   email: string;
   decisionMaker: boolean;
 }
+export interface Lead extends BaseRecord {
+  company: string;
+  email: string;
+  phone: string;
+  source: string;
+  owner: string;
+  value: number;
+  closeDate: string;
+  organizationId?: string;
+  contactId?: string;
+  opportunityId?: string;
+}
+export interface SalesTask extends BaseRecord {
+  assigneeId: string;
+  dueAt: string;
+  reminderAt: string;
+  priority: string;
+  organizationId?: string;
+  opportunityId?: string;
+  leadId?: string;
+}
+export interface PipelineStage {
+  id: string;
+  name: string;
+  probability: number;
+  outcome: "open" | "won" | "lost";
+}
+export interface Pipeline extends BaseRecord {
+  stages: PipelineStage[];
+}
 export interface Opportunity extends BaseRecord {
+  salesOutcome?: "open" | "won" | "lost";
+  pipelineId?: string;
+  stageId?: string;
   organizationId: string;
   contactId: string;
   productId: string;
@@ -319,6 +352,9 @@ export interface PurchaseRequest extends BaseRecord {
   date: string;
 }
 export interface Database {
+  leads: Lead[];
+  tasks: SalesTask[];
+  pipelines: Pipeline[];
   organizations: Organization[];
   contacts: Contact[];
   opportunities: Opportunity[];

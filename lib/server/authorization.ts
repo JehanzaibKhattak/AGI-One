@@ -37,6 +37,15 @@ export function authorizeCommand(
   )
     throw new HttpError(400, "Unknown record type.");
   switch (command.action) {
+    case "configurePipeline":
+      if (access.role !== "owner")
+        throw new HttpError(403, "Only the owner can configure pipelines.");
+      break;
+    case "convertLead":
+      require("sales", "edit");
+      require("sales", "create");
+      require("customers", "create");
+      break;
     case "create":
       require(collectionArea[command.collection], "create");
       break;

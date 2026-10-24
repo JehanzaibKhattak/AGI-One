@@ -1,3 +1,9 @@
+import { Connections } from "@/components/modules/connections";
+import {
+  SalesDirectory,
+  Pipelines,
+  SalesForecast,
+} from "@/components/modules/sales";
 import { headers } from "next/headers";
 import { auth } from "@/lib/server/auth";
 import { pool } from "@/lib/server/db";
@@ -68,6 +74,13 @@ export default async function Page({
         />
       );
   }
+  if (route === "/sales/connections") return <Connections />;
+  if (route === "/sales/leads") return <SalesDirectory kind="leads" />;
+  if (route === "/sales/tasks") return <SalesDirectory kind="tasks" />;
+  if (route === "/sales/opportunities")
+    return <SalesDirectory kind="opportunities" />;
+  if (route === "/sales/pipelines") return <Pipelines />;
+  if (route === "/sales/forecast") return <SalesForecast />;
   if (route === "/dashboard") return <Dashboard />;
   if (route === "/reports") return <Reports />;
   if (route === "/settings") return <Settings />;

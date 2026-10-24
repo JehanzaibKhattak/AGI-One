@@ -57,6 +57,7 @@ import { modules, moduleFor, recordPath } from "@/lib/constants/modules";
 import { RecordForm } from "@/components/forms/record-form";
 import type { Collection } from "@/types";
 import { dateLabel } from "@/lib/utils";
+import { TaskReminders } from "./task-reminders";
 import { Toaster } from "sonner";
 const groups = [
   { label: "WORKSPACE", items: [["Dashboard", "/dashboard", LayoutDashboard]] },
@@ -66,7 +67,11 @@ const groups = [
       ["CRM overview", "/crm/overview", Building2],
       ["Organizations", "/crm", Building2],
       ["Contacts", "/crm/contacts", Users],
+      ["Leads", "/sales/leads", Target],
+      ["Tasks & reminders", "/sales/tasks", FileText],
       ["Opportunities", "/sales/opportunities", Target],
+      ["Sales forecast", "/sales/forecast", Target],
+      ["Email & calendar", "/sales/connections", FileText],
       ["Quotations", "/sales/quotations", FileText],
       ["Sales orders", "/sales/orders", ShoppingBag],
     ],
@@ -407,6 +412,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main id="main-content" className="main-content">
+          <TaskReminders />
           {children}
         </main>
         <footer className="workspace-footer">

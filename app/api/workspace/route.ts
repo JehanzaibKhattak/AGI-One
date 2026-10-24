@@ -1,3 +1,4 @@
+import { defaultPipeline } from "@/lib/services/sales";
 import type { PoolClient } from "pg";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
@@ -12,7 +13,7 @@ import {
 } from "@/lib/server/http";
 import { createEmptyDatabase } from "@/lib/database/empty";
 import { executeCommand } from "@/lib/server/commands";
-import { visibleDatabase } from "@/lib/access";
+import { visibleDatabase, can, inBranch, branchOf } from "@/lib/access";
 import {
   loadDatabase,
   loadCommandDatabase,
@@ -166,6 +167,11 @@ export async function POST(request: Request) {
           JSON.stringify(data.settings),
         ],
       );
+      await client.query("SELECT set_config('agi.workspace_id',$1,true)", [id]);
+      await client.query(
+        "INSERT INTO agi_records(workspace_id,collection,id,data) VALUES($1,'pipelines','default',$2)",
+        [id, JSON.stringify(defaultPipeline)],
+      );
       await client.query(
         "INSERT INTO agi_members(user_id,workspace_id,role) VALUES($1,$2,'owner')",
         [session.user.id, id],
@@ -232,6 +238,25 @@ export async function PATCH(request: Request) {
       executionRole,
     );
     const data = mergeChanges(before, changed, access);
+    for (const task of data.tasks) {
+      const old = before.tasks.find((t) => t.id === task.id);
+      if (JSON.stringify(old) === JSON.stringify(task)) continue;
+      const assignee = (
+        await client.query(
+          "SELECT role,grants,branch_ids FROM agi_members WHERE workspace_id=$1 AND user_id=$2 FOR SHARE",
+          [member.workspace_id, task.assigneeId],
+        )
+      ).rows[0];
+      if (
+        !assignee ||
+        !can(assignee, "sales", "view") ||
+        !inBranch(assignee, "tasks", branchOf(data, "tasks", task))
+      )
+        throw new HttpError(
+          400,
+          "Assign the task to a current teammate with access to its branch.",
+        );
+    }
     await assignNumbers(client, member.workspace_id, before, data);
     await persistChanges(client, member.workspace_id, before, data);
     await client.query(

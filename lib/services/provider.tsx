@@ -15,6 +15,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const path = usePathname();
   const mode = [
+    "/sales/leads",
+    "/sales/tasks",
+    "/sales/opportunities",
+    "/sales/pipelines",
+    "/sales/forecast",
+    "/sales/connections",
     "/crm",
     "/crm/overview",
     "/crm/organizations",

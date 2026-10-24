@@ -1,3 +1,4 @@
+import { opportunityOutcome } from "@/lib/services/sales";
 import type { Collection, Database, BaseRecord } from "@/types";
 import { money, totals, dateLabel, today, daysFromNow } from "@/lib/utils";
 import {
@@ -10,7 +11,14 @@ export type Field = {
   key: string;
   label: string;
   type?:
-    "text" | "email" | "number" | "date" | "textarea" | "select" | "checkbox";
+    | "text"
+    | "email"
+    | "number"
+    | "date"
+    | "datetime-local"
+    | "textarea"
+    | "select"
+    | "checkbox";
   options?: string[];
   relation?: Collection;
   required?: boolean;
@@ -83,6 +91,65 @@ const statuses = {
   ],
 };
 export const modules: Module[] = [
+  {
+    key: "leads",
+    title: "Leads",
+    singular: "Lead",
+    description:
+      "Qualify new relationships and convert them without re-entering information.",
+    path: "/sales/leads",
+    columns: [
+      ["name", "Lead"],
+      ["company", "Company"],
+      ["email", "Email"],
+      ["owner", "Owner"],
+      ["status", "Status"],
+    ],
+    statuses: ["New", "Working", "Qualified", "Disqualified", "Converted"],
+    fields: [
+      name,
+      f("company", "Company", "text", { required: true }),
+      f("email", "Email", "email", { required: true }),
+      f("phone", "Phone"),
+      f("source", "Source"),
+      owner,
+      f("value", "Expected value", "number"),
+      f("closeDate", "Expected close", "date", { required: true }),
+      note,
+    ],
+  },
+  {
+    key: "tasks",
+    title: "Tasks & reminders",
+    singular: "Task",
+    description: "Keep ownership and the next action clear.",
+    path: "/sales/tasks",
+    columns: [
+      ["name", "Task"],
+      ["dueAt", "Due"],
+      ["priority", "Priority"],
+      ["status", "Status"],
+    ],
+    statuses: ["Open", "In Progress", "Completed", "Cancelled"],
+    fields: [
+      name,
+      f("assigneeId", "Assigned to", "select", { required: true }),
+      f("dueAt", "Due at", "datetime-local", { required: true }),
+      f("reminderAt", "Remind at", "datetime-local"),
+      f("priority", "Priority", "select", {
+        options: ["Normal", "High", "Urgent"],
+        default: "Normal",
+        required: true,
+      }),
+      f("organizationId", "Customer", "select", { relation: "organizations" }),
+      f("opportunityId", "Opportunity", "select", {
+        relation: "opportunities",
+      }),
+      f("leadId", "Lead", "select", { relation: "leads" }),
+      note,
+    ],
+  },
+
   {
     key: "organizations",
     title: "Organizations",
@@ -1035,7 +1102,7 @@ export function displayRows(db: Database, key: Collection): DisplayRow[] {
         "No contact";
       row.balance = customerBalance(db, r.id);
       row.opportunities = db.opportunities.filter(
-        (p) => p.organizationId === r.id && !["Won", "Lost"].includes(p.status),
+        (p) => p.organizationId === r.id && opportunityOutcome(p) === "open",
       ).length;
       row.lastActivity =
         db.activities.find((a) => a.organizationId === r.id)?.date ||

@@ -1,4 +1,5 @@
 "use client";
+import { opportunityOutcome } from "@/lib/services/sales";
 import { can, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
@@ -797,7 +798,7 @@ export function DetailPage({ module, id }: { module: Module; id: string }) {
                   db.opportunities.filter(
                     (o) =>
                       o.organizationId === id &&
-                      !["Won", "Lost"].includes(o.status),
+                      opportunityOutcome(o) === "open",
                   ).length
                 }
               />

@@ -21,6 +21,9 @@ export type Access = {
 };
 export type Branch = { id: string; name: string };
 export const collectionArea: Record<Collection, Area> = {
+  leads: "sales",
+  tasks: "sales",
+  pipelines: "sales",
   organizations: "customers",
   contacts: "customers",
   opportunities: "sales",
@@ -66,6 +69,7 @@ export function can(access: Access, area: Area, action: AccessAction) {
   return access.role === "editor" && ["create", "edit"].includes(action);
 }
 export const globalCollections: Collection[] = [
+  "pipelines",
   "products",
   "categories",
   "suppliers",
@@ -85,6 +89,8 @@ export function branchOf(
   const row = record as BaseRecord & Record<string, unknown>;
   const parents: [string, Collection][] = [
     ["organizationId", "organizations"],
+    ["leadId", "leads"],
+    ["opportunityId", "opportunities"],
     ["orderId", "orders"],
     ["invoiceId", "invoices"],
     ["ticketId", "tickets"],

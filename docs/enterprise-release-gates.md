@@ -11,6 +11,10 @@ The standard is reliable customer workflows, safe administration, measured opera
 - Indexed, cursor-paginated customer search, scoped relation pickers and permission-aware global search.
 - Owner-managed branch creation, permissions, invitations, invitation revocation, member revocation/session invalidation and ownership transfer.
 - Server-recorded administration and business audit events with a paginated audit viewer.
+- Qualified lead conversion into linked customer/contact/opportunity records, with repeat-conversion protection.
+- Assigned tasks, UTC due/reminder times and personal in-app reminders.
+- Owner-configurable multi-pipeline stages/probabilities, safe stage edits and permission-scoped SQL forecasts.
+- Microsoft 365 connection code with PKCE, encrypted rotating credentials and personal read-only inbox/calendar views; live consent requires an app registration.
 - Atomic quote-to-cash, purchasing receipt, service parts and inventory cancellation rules covered by tests.
 
 ## Release gates still open
@@ -19,7 +23,7 @@ The standard is reliable customer workflows, safe administration, measured opera
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Data scale               | Replace remaining compatibility snapshot reads in dashboards, reports and legacy modules. Move from workspace-wide optimistic revisions to per-record concurrency where appropriate. Publish realistic load/soak measurements and capacity limits. |
 | Identity                 | Configure verified email, recovery, MFA and enterprise SSO with tested recovery and offboarding procedures.                                                                                                                                        |
-| Daily sales productivity | Complete lead capture/conversion, tasks/reminders, configurable pipelines, forecasting, email/calendar activity and validated imports.                                                                                                             |
+| Daily sales productivity | Validate sales workflows with pilots; add validated imports, communication logging, background reminders, forecast submissions/quotas and live-tested email/calendar connections.                                                                  |
 | Integrations             | Complete secure files, transactional email, durable jobs, API/webhooks and the integrations selected by pilot customers.                                                                                                                           |
 | Financial correctness    | Integrate accounting or validate balanced posting, credits, returns, partial operations, currency precision and tax treatment. Operational totals are not statutory accounts.                                                                      |
 | Reliability              | Deploy staging/production, monitoring, alerts, tested backup schedules, restore objectives and incident ownership.                                                                                                                                 |

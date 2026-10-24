@@ -120,3 +120,35 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS agi_record_search ON agi_records USING gin(search_text gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS agi_records_recent ON agi_records(workspace_id,collection,updated_at DESC,id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS agi_members_user_workspace ON agi_members(user_id,workspace_id);
+CREATE TABLE IF NOT EXISTS agi_connections (
+  workspace_id text NOT NULL,
+  user_id text NOT NULL,
+  provider text NOT NULL CHECK(provider='microsoft'),
+  account_label text NOT NULL,
+  credentials text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(workspace_id,user_id,provider),
+  FOREIGN KEY(user_id,workspace_id) REFERENCES agi_members(user_id,workspace_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS agi_connection_states (
+  state_hash text PRIMARY KEY,
+  workspace_id text NOT NULL,
+  user_id text NOT NULL,
+  verifier text NOT NULL,
+  expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes',
+  FOREIGN KEY(user_id,workspace_id) REFERENCES agi_members(user_id,workspace_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS agi_connection_states_expiry ON agi_connection_states(expires_at);
+ALTER TABLE agi_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agi_connections FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS workspace_scope ON agi_connections;
+CREATE POLICY workspace_scope ON agi_connections USING(workspace_id=current_setting('agi.workspace_id',true)) WITH CHECK(workspace_id=current_setting('agi.workspace_id',true));
+ALTER TABLE agi_connection_states ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agi_connection_states FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS workspace_scope ON agi_connection_states;
+CREATE POLICY workspace_scope ON agi_connection_states USING(workspace_id=current_setting('agi.workspace_id',true)) WITH CHECK(workspace_id=current_setting('agi.workspace_id',true));
+CREATE INDEX IF NOT EXISTS agi_sales_pipeline ON agi_records(workspace_id,(coalesce(data->>'pipelineId','default')),status) WHERE collection='opportunities';
+CREATE INDEX IF NOT EXISTS agi_sales_close_date ON agi_records(workspace_id,(data->>'closeDate')) WHERE collection='opportunities';
+CREATE INDEX IF NOT EXISTS agi_task_assignee ON agi_records(workspace_id,(data->>'assigneeId'),status) WHERE collection='tasks';

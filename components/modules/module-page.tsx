@@ -1,4 +1,5 @@
 "use client";
+import { opportunityOutcome } from "@/lib/services/sales";
 import { can, collectionArea } from "@/lib/access";
 import { useState } from "react";
 import Link from "next/link";
@@ -138,9 +139,8 @@ export function ModulePage({ module }: { module: Module }) {
           <Stat
             label="Open opportunities"
             value={
-              db.opportunities.filter(
-                (o) => !["Won", "Lost"].includes(o.status),
-              ).length
+              db.opportunities.filter((o) => opportunityOutcome(o) === "open")
+                .length
             }
           />
           <Stat
@@ -233,7 +233,7 @@ export function ModulePage({ module }: { module: Module }) {
             <strong>
               {money(
                 db.opportunities
-                  .filter((o) => !["Won", "Lost"].includes(o.status))
+                  .filter((o) => opportunityOutcome(o) === "open")
                   .reduce((s, o) => s + o.value, 0),
                 true,
               )}
@@ -244,7 +244,7 @@ export function ModulePage({ module }: { module: Module }) {
             <strong>
               {money(
                 db.opportunities
-                  .filter((o) => !["Won", "Lost"].includes(o.status))
+                  .filter((o) => opportunityOutcome(o) === "open")
                   .reduce((s, o) => s + (o.value * o.probability) / 100, 0),
                 true,
               )}
@@ -255,7 +255,7 @@ export function ModulePage({ module }: { module: Module }) {
             <strong className="green-text">
               {money(
                 db.opportunities
-                  .filter((o) => o.status === "Won")
+                  .filter((o) => opportunityOutcome(o) === "won")
                   .reduce((s, o) => s + o.value, 0),
                 true,
               )}

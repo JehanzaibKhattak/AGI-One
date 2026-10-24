@@ -1,3 +1,5 @@
+import { defaultPipeline } from "../lib/services/sales";
+import { executeCommand } from "../lib/server/commands";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -123,6 +125,78 @@ test("relational storage, constrained references, branch paging and targeted com
     });
     assert.equal(payment.invoices.length, 1);
     assert.equal(payment.organizations.length, 1);
+    // A conversion loads just its lead/pipeline graph and commits linked records together.
+    await client.query("SET CONSTRAINTS ALL DEFERRED");
+    const sales = structuredClone(db);
+    sales.pipelines.push(structuredClone(defaultPipeline));
+    sales.leads.push({
+      id: "lead",
+      name: "Alex Buyer",
+      company: "Example prospect",
+      email: "alex@example.com",
+      phone: "",
+      source: "Website",
+      owner: "Seller",
+      value: 1000,
+      closeDate: "2026-10-31",
+      status: "Qualified",
+      createdAt: new Date().toISOString(),
+      branchId: "north",
+    });
+    await persistChanges(client, id, db, sales);
+    const graph = await loadCommandDatabase(client, id, db.settings, {
+      action: "convertLead",
+      id: "lead",
+      pipelineId: "default",
+    });
+    assert.equal(graph.leads.length, 1);
+    assert.equal(graph.pipelines.length, 1);
+    assert.equal(graph.products.length, 0);
+    const converted = executeCommand(
+      graph,
+      { action: "convertLead", id: "lead", pipelineId: "default" },
+      "Seller",
+      "owner",
+    ).data;
+    await persistChanges(client, id, graph, converted);
+    await client.query("SET CONSTRAINTS ALL IMMEDIATE");
+    const convertedGraph = await loadCommandDatabase(client, id, db.settings, {
+      action: "convertLead",
+      id: "lead",
+      pipelineId: "default",
+    });
+    assert.equal(convertedGraph.opportunities.length, 1);
+    assert.equal(convertedGraph.contacts.length, 1);
+    assert.equal(convertedGraph.leads[0].status, "Converted");
+    const pipelineGraph = await loadCommandDatabase(client, id, db.settings, {
+      action: "configurePipeline",
+      id: "default",
+    });
+    assert.equal(pipelineGraph.opportunities.length, 1);
+    const renamed = structuredClone(defaultPipeline.stages);
+    renamed[0].name = "Discovery";
+    renamed[0].probability = 30;
+    const configured = executeCommand(
+      pipelineGraph,
+      {
+        action: "configurePipeline",
+        id: "default",
+        name: "Enterprise",
+        stages: renamed,
+      },
+      "Owner",
+      "owner",
+    ).data;
+    await persistChanges(client, id, pipelineGraph, configured);
+    assert.equal(
+      (
+        await client.query(
+          "SELECT data->>'status' AS stage FROM agi_records WHERE workspace_id=$1 AND collection='opportunities'",
+          [id],
+        )
+      ).rows[0].stage,
+      "Discovery",
+    );
     // PostgreSQL policies must still isolate tenants when application WHERE clauses are absent.
     const outside = randomUUID();
     await setup(client, outside);
@@ -141,7 +215,32 @@ test("relational storage, constrained references, branch paging and targeted com
     const role = "agi_rls_" + randomUUID().replaceAll("-", "");
     await client.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
     await client.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
-    await client.query(`GRANT SELECT,INSERT,UPDATE ON agi_records TO ${role}`);
+    const memberId = randomUUID(),
+      outsideMember = randomUUID();
+    for (const [userId, workspace] of [
+      [memberId, id],
+      [outsideMember, outside],
+    ]) {
+      await client.query(
+        'INSERT INTO "user"(id,name,email,"emailVerified","createdAt","updatedAt") VALUES($1,$3,$2,false,now(),now())',
+        [userId, userId + "@example.com", "Connection tester"],
+      );
+      await client.query(
+        "INSERT INTO agi_members(user_id,workspace_id,role) VALUES($1,$2,'viewer')",
+        [userId, workspace],
+      );
+      await client.query("SELECT set_config('agi.workspace_id',$1,true)", [
+        workspace,
+      ]);
+      await client.query(
+        "INSERT INTO agi_connections(workspace_id,user_id,provider,account_label,credentials) VALUES($1,$2,'microsoft','Test mailbox','test-ciphertext')",
+        [workspace, userId],
+      );
+    }
+    await client.query("SELECT set_config('agi.workspace_id',$1,true)", [id]);
+    await client.query(
+      `GRANT SELECT,INSERT,UPDATE ON agi_records,agi_connections TO ${role}`,
+    );
     await client.query(`SET LOCAL ROLE ${role}`);
     assert.equal(
       (
@@ -170,7 +269,31 @@ test("relational storage, constrained references, branch paging and targeted com
       (error: unknown) => (error as { code: string }).code === "42501",
     );
     await client.query("ROLLBACK TO SAVEPOINT denied_tenant_insert");
+    assert.equal(
+      (await client.query("SELECT count(*) FROM agi_connections")).rows[0]
+        .count,
+      "1",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "SELECT count(*) FROM agi_connections WHERE workspace_id=$1",
+          [outside],
+        )
+      ).rows[0].count,
+      "0",
+    );
     await client.query("RESET ROLE");
+    await client.query("DELETE FROM agi_members WHERE user_id=$1", [memberId]);
+    assert.equal(
+      (
+        await client.query(
+          "SELECT count(*) FROM agi_connections WHERE workspace_id=$1 AND user_id=$2",
+          [id, memberId],
+        )
+      ).rows[0].count,
+      "0",
+    );
   } finally {
     await client.query("ROLLBACK");
     client.release();

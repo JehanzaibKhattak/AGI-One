@@ -1,3 +1,4 @@
+import { defaultPipeline } from "@/lib/services/sales";
 import type { PoolClient } from "pg";
 import { createEmptyDatabase } from "@/lib/database/empty";
 import {
@@ -19,6 +20,9 @@ const documents: Collection[] = [
 ];
 const references: Record<string, Collection> = {
   organizationId: "organizations",
+  opportunityId: "opportunities",
+  leadId: "leads",
+  pipelineId: "pipelines",
   contactId: "contacts",
   productId: "products",
   quotationId: "quotations",
@@ -48,7 +52,7 @@ export async function loadDatabase(
       (!access ||
         can(access, collectionArea[c], "view") ||
         (c === "approvals" && can(access, "finance", "view"))) &&
-      (!directory || ["notifications", "audit"].includes(c)),
+      (!directory || ["notifications", "audit", "pipelines"].includes(c)),
   );
   const unrestricted =
     !access || access.role === "owner" || !access.branch_ids?.length;
@@ -209,7 +213,7 @@ export async function migrateSnapshots(client: PoolClient) {
       "SELECT id,data FROM agi_workspaces WHERE storage_version=0 FOR UPDATE",
     );
     for (const workspace of workspaces.rows) {
-      const db = workspace.data;
+      const db = { ...createEmptyDatabase(), ...workspace.data };
       await client.query("SELECT set_config('agi.workspace_id',$1,true)", [
         workspace.id,
       ]);
@@ -244,6 +248,16 @@ export async function migrateSnapshots(client: PoolClient) {
           "INSERT INTO agi_sequences(workspace_id,collection,value) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
           [workspace.id, c, db[c as Collection].length],
         );
+    }
+    const all = await client.query("SELECT id FROM agi_workspaces");
+    for (const workspace of all.rows) {
+      await client.query("SELECT set_config('agi.workspace_id',$1,true)", [
+        workspace.id,
+      ]);
+      await client.query(
+        "INSERT INTO agi_records(workspace_id,collection,id,data) VALUES($1,'pipelines','default',$2) ON CONFLICT DO NOTHING",
+        [workspace.id, JSON.stringify(defaultPipeline)],
+      );
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -303,6 +317,8 @@ export async function loadCommandDatabase(
     id?: string;
     record?: Record<string, unknown>;
     values?: Record<string, unknown>;
+    organizationId?: string;
+    pipelineId?: string;
     payment?: Record<string, unknown>;
     args?: unknown[];
     operation?: string;
@@ -320,7 +336,11 @@ export async function loadCommandDatabase(
     for (const item of items) add("products", item.productId);
   if (command.collection && collections.includes(command.collection))
     add(command.collection, command.id || command.record?.id);
+  add("organizations", command.organizationId);
+  add("pipelines", command.pipelineId);
   const primary: Record<string, Collection> = {
+    convertLead: "leads",
+    configurePipeline: "pipelines",
     receivePayment: "invoices",
     convertQuotation: "quotations",
     orderAction: "orders",
@@ -371,6 +391,13 @@ export async function loadCommandDatabase(
     );
     for (const row of rows.rows) add(row.collection, row.id);
   }
+  if (command.action === "configurePipeline") {
+    const linked = await client.query(
+      "SELECT id FROM agi_records WHERE workspace_id=$1 AND collection='opportunities' AND coalesce(data->>'pipelineId','default')=$2",
+      [workspaceId, command.id],
+    );
+    for (const row of linked.rows) add("opportunities", row.id);
+  }
   const fetchGraph = async () =>
     client.query<{
       collection: Collection;
@@ -387,6 +414,11 @@ export async function loadCommandDatabase(
  SELECT r.collection,r.id,r.data,r.branch_id FROM agi_records r JOIN dependencies d USING(collection,id) WHERE r.workspace_id=$1 ORDER BY r.updated_at DESC,r.id`,
       [workspaceId, JSON.stringify([...roots.values()])],
     );
+  if (
+    command.collection === "opportunities" ||
+    command.action === "configurePipeline"
+  )
+    add("pipelines", "default");
   const first = await fetchGraph();
   const invoices = first.rows
       .filter((r) => r.collection === "invoices")

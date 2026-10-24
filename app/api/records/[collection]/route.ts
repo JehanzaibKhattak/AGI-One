@@ -20,6 +20,8 @@ export async function GET(
         branchId: z.string().max(200).optional(),
         organizationId: z.string().max(200).optional(),
         id: z.string().max(200).optional(),
+        pipelineId: z.string().max(200).optional(),
+        assigneeId: z.string().max(200).optional(),
       })
       .parse(Object.fromEntries(new URL(request.url).searchParams));
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
