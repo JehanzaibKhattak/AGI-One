@@ -1,3 +1,10 @@
+import { securityFlow } from "./security-flow";
+import {
+  accountMail,
+  verifyAndSignIn,
+  signInResponse,
+  signInAccount,
+} from "./auth-helpers";
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { fixture } from "../fixtures";
 const origin = process.env.BASE_URL || "http://localhost:3000";
@@ -6,7 +13,7 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
   page,
   browser,
 }) => {
-  test.setTimeout(240000);
+  test.setTimeout(360000);
   const suffix = Date.now();
   const email = `owner-${suffix}@example.com`;
   const errors: string[] = [];
@@ -26,6 +33,13 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
+  await expect(page).toHaveURL(/\/verify-email/);
+  expect((await page.request.get("/api/workspace")).status()).toBe(401);
+  await page.goto(await accountMail(email, "Verify your AGI One email"));
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding/);
   await page.getByLabel("Workspace name").fill("Example workspace");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -248,6 +262,7 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
     },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
+  await verifyAndSignIn(other, `other-${suffix}@example.com`, password);
   expect(
     (
       await other.post("/api/workspace", {
@@ -286,6 +301,7 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
       })
     ).ok(),
   ).toBeTruthy();
+  await verifyAndSignIn(viewer.request, viewerEmail, password);
   expect(
     (
       await viewer.request.post("/api/workspace", {
@@ -488,6 +504,7 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
     "/sales/pipelines",
     "/sales/forecast",
     "/sales/connections",
+    "/account/security",
     "/dashboard",
     "/crm",
     "/crm/contacts",
@@ -557,25 +574,16 @@ test("real accounts, clean onboarding, business workflows and workspace isolatio
   await expect(page).toHaveURL(/\/login/);
   expect((await page.request.get("/api/workspace")).status()).toBe(401);
   expect(
-    (
-      await page.request.post("/api/auth/sign-in/email", {
-        headers: { Origin: origin },
-        data: { email, password: "incorrect-password" },
-      })
-    ).status(),
+    (await signInResponse(page.request, email, "incorrect-password")).status(),
   ).toBe(401);
   expect(
-    (
-      await page.request.post("/api/auth/sign-in/email", {
-        headers: { Origin: origin },
-        data: { email, password },
-      })
-    ).ok(),
+    (await signInAccount(page.request, email, password)).ok(),
   ).toBeTruthy();
   await page.goto("/dashboard");
   await expect(
     page.getByRole("heading", { name: "Welcome, Workspace" }),
   ).toBeVisible();
+  await securityFlow(page, browser, email, password);
   expect(errors).toEqual([]);
   await outsider.close();
   await viewer.close();

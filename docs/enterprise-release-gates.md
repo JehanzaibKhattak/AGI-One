@@ -5,6 +5,7 @@ The standard is reliable customer workflows, safe administration, measured opera
 ## Implemented and directly verifiable
 
 - Account and workspace isolation, server authentication and protected mutations.
+- Required email verification, password recovery with session revocation, authenticator MFA, one-use encrypted backup codes and personal session management. Local preview/SMTP configuration is explicit; live email deliverability remains a deployment gate.
 - Per-module view/create/edit/approve/export grants, with branch-scoped business data and shared catalogs.
 - Database-enforced record identities, unique document numbers and product/customer codes, cross-record foreign keys, document-line constraints and PostgreSQL tenant policies.
 - Targeted command reads, writes of changed records only, and bounded mutation responses.
@@ -22,7 +23,7 @@ The standard is reliable customer workflows, safe administration, measured opera
 | Gate                     | Required evidence before calling this enterprise-ready                                                                                                                                                                                             |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Data scale               | Replace remaining compatibility snapshot reads in dashboards, reports and legacy modules. Move from workspace-wide optimistic revisions to per-record concurrency where appropriate. Publish realistic load/soak measurements and capacity limits. |
-| Identity                 | Configure verified email, recovery, MFA and enterprise SSO with tested recovery and offboarding procedures.                                                                                                                                        |
+| Identity                 | Validate production email delivery and offboarding; implement enterprise SSO, organization-enforced MFA, audited lost-factor recovery and key rotation. Verified email, password recovery and optional authenticator MFA are implemented.          |
 | Daily sales productivity | Validate sales workflows with pilots; add validated imports, communication logging, background reminders, forecast submissions/quotas and live-tested email/calendar connections.                                                                  |
 | Integrations             | Complete secure files, transactional email, durable jobs, API/webhooks and the integrations selected by pilot customers.                                                                                                                           |
 | Financial correctness    | Integrate accounting or validate balanced posting, credits, returns, partial operations, currency precision and tax treatment. Operational totals are not statutory accounts.                                                                      |

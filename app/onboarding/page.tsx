@@ -16,6 +16,7 @@ export default async function Onboarding({
       (invitation ? "?invitation=" + encodeURIComponent(invitation) : "");
     redirect("/login?next=" + encodeURIComponent(next));
   }
+  if (!session.user.emailVerified) redirect("/verify-email");
   if (
     (
       await pool.query("SELECT 1 FROM agi_members WHERE user_id=$1", [

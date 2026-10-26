@@ -3,6 +3,7 @@
 ## Completed foundation
 
 - Independent AGI One branding; previous business materials and sample records removed from the active project.
+- Required verified email, password recovery, optional authenticator MFA/backup codes and session management.
 - Empty-workspace onboarding and configurable company, timezone and base currency.
 - PostgreSQL-backed accounts, sessions, workspace data, membership and audit events.
 - Server-enforced owner/editor/viewer roles and one-time, email-bound team invitations.
@@ -22,7 +23,7 @@
 ## Required before a live client pilot
 
 1. Provision production and staging PostgreSQL, HTTPS domains, least-privilege database access and managed secrets. Run migrations as a separate deployment step.
-2. Configure verified email, account recovery and reliable transactional email. Add MFA/SSO if required by the pilot's security policy. Resolve identity assurance before external team rollout.
+2. Configure and live-test SMTP delivery for the implemented verification/recovery flows. Add enterprise SSO and organization-enforced MFA where required; establish audited lost-factor recovery and identity assurance before external team rollout.
 3. Replace remaining full-projection reads in legacy modules and reports with scoped queries and aggregates. Introduce per-record concurrency where appropriate. Measure production-like load, query plans, storage and recovery limits.
 4. Add governed workspace switching, field-level sharing and branch reassignment workflows. Validate role templates and exception policies with pilot administrators.
 5. Finish inventory returns/adjustments, partial receiving/delivery, serial/lot/expiry allocation, purchasing tax and landed-cost posting. Validate real warehouse workflows with the client.

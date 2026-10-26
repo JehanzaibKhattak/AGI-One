@@ -1,3 +1,4 @@
+import { verifyAndSignIn, signInAccount } from "./auth-helpers";
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { fixture } from "../fixtures";
 const origin = process.env.BASE_URL || "http://localhost:3000";
@@ -15,6 +16,7 @@ test("owners manage scoped access, finance privacy, invitations, revocation and 
     data: { name: "Access Owner", email: ownerEmail, password },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
+  await verifyAndSignIn(page.request, ownerEmail, password);
   expect(
     (
       await page.request.post("/api/workspace", {
@@ -164,6 +166,7 @@ test("owners manage scoped access, finance privacy, invitations, revocation and 
       })
     ).ok(),
   ).toBeTruthy();
+  await verifyAndSignIn(agent.request, agentEmail, password);
   expect(
     (
       await agent.request.post("/api/workspace", {
@@ -376,12 +379,7 @@ test("owners manage scoped access, finance privacy, invitations, revocation and 
     ).status(),
   ).toBe(200);
   expect(
-    (
-      await page.request.post("/api/auth/sign-in/email", {
-        headers: { Origin: origin },
-        data: { email: ownerEmail, password },
-      })
-    ).ok(),
+    (await signInAccount(page.request, ownerEmail, password)).ok(),
   ).toBeTruthy();
   expect(
     (

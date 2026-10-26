@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { authDestination } from "@/lib/auth-navigation";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -79,25 +81,59 @@ export default function Login() {
               try {
                 const email = String(values.get("email")).trim();
                 const password = String(values.get("password"));
+                const requestedNext = new URLSearchParams(
+                  window.location.search,
+                ).get("next");
+                const next = authDestination(requestedNext);
+                const verificationCallback = new URL(
+                  "/login?verified=1",
+                  window.location.origin,
+                );
+                verificationCallback.searchParams.set(
+                  "next",
+                  next === "/dashboard" ? "/onboarding?verified=1" : next,
+                );
                 const result = signup
                   ? await authClient.signUp.email({
                       name: String(values.get("name")).trim(),
                       email,
                       password,
+                      callbackURL: verificationCallback.href,
                     })
                   : await authClient.signIn.email({ email, password });
-                if (result.error)
+                if (result.error) {
+                  if (result.error.code === "EMAIL_NOT_VERIFIED") {
+                    router.replace(
+                      "/verify-email?" + new URLSearchParams({ email, next }),
+                    );
+                    return;
+                  }
                   throw new Error(result.error.message || "Unable to sign in.");
-                const next = new URLSearchParams(window.location.search).get(
-                  "next",
-                );
-                router.replace(
-                  next?.startsWith("/onboarding?")
-                    ? next
-                    : signup
-                      ? "/onboarding"
-                      : "/dashboard",
-                );
+                }
+                if (signup) {
+                  router.replace(
+                    "/verify-email?" +
+                      new URLSearchParams({
+                        email,
+                        next:
+                          next === "/dashboard"
+                            ? "/onboarding?verified=1"
+                            : next,
+                      }),
+                  );
+                  return;
+                }
+                if (
+                  result.data &&
+                  "twoFactorRedirect" in result.data &&
+                  result.data.twoFactorRedirect
+                ) {
+                  router.replace(
+                    "/two-factor?" + new URLSearchParams({ next }),
+                  );
+                  return;
+                }
+                router.replace(next);
                 router.refresh();
               } catch (e) {
                 setError((e as Error).message);
@@ -159,6 +195,11 @@ export default function Login() {
               <ArrowRight size={17} />
             </button>
           </form>
+          {!signup && (
+            <Link className="text-btn" href="/forgot-password">
+              Forgot your password?
+            </Link>
+          )}
           <button
             className="text-btn"
             onClick={() => {

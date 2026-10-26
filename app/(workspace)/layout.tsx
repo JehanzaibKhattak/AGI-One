@@ -10,6 +10,7 @@ export default async function WorkspaceLayout({
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/login");
+  if (!session.user.emailVerified) redirect("/verify-email");
   const member = await pool.query(
     "SELECT 1 FROM agi_members WHERE user_id=$1",
     [session.user.id],

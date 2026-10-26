@@ -241,6 +241,64 @@ test("relational storage, constrained references, branch paging and targeted com
     await client.query(
       `GRANT SELECT,INSERT,UPDATE ON agi_records,agi_connections TO ${role}`,
     );
+    // Password and MFA changes invalidate sessions/challenges in the same database transaction.
+    await client.query(
+      `INSERT INTO account(id,"accountId","providerId","userId",password,"createdAt","updatedAt") VALUES($1,$1,'credential',$1,'first-hash',now(),now())`,
+      [memberId],
+    );
+    const addAuthenticationState = async () => {
+      await client.query(
+        `INSERT INTO "session"(id,token,"userId","expiresAt","createdAt","updatedAt") VALUES($1,$1,$2,now()+interval '1 hour',now(),now())`,
+        [randomUUID(), memberId],
+      );
+      for (const prefix of ["2fa-", "trust-device-", "reset-password:"])
+        await client.query(
+          `INSERT INTO verification(id,identifier,value,"expiresAt","createdAt","updatedAt") VALUES($1,$2,$3,now()+interval '1 hour',now(),now())`,
+          [randomUUID(), prefix + randomUUID(), memberId],
+        );
+    };
+    await addAuthenticationState();
+    await client.query(
+      "UPDATE account SET password='second-hash' WHERE id=$1",
+      [memberId],
+    );
+    assert.equal(
+      (
+        await client.query('SELECT count(*) FROM "session" WHERE "userId"=$1', [
+          memberId,
+        ])
+      ).rows[0].count,
+      "0",
+    );
+    assert.equal(
+      (
+        await client.query("SELECT count(*) FROM verification WHERE value=$1", [
+          memberId,
+        ])
+      ).rows[0].count,
+      "0",
+    );
+    await addAuthenticationState();
+    await client.query(
+      'UPDATE "user" SET "twoFactorEnabled"=true WHERE id=$1',
+      [memberId],
+    );
+    assert.equal(
+      (
+        await client.query('SELECT count(*) FROM "session" WHERE "userId"=$1', [
+          memberId,
+        ])
+      ).rows[0].count,
+      "0",
+    );
+    assert.equal(
+      (
+        await client.query("SELECT count(*) FROM verification WHERE value=$1", [
+          memberId,
+        ])
+      ).rows[0].count,
+      "0",
+    );
     await client.query(`SET LOCAL ROLE ${role}`);
     assert.equal(
       (

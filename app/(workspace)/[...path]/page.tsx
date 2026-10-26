@@ -1,3 +1,4 @@
+import { AccountSecurity } from "@/components/modules/account-security";
 import { Connections } from "@/components/modules/connections";
 import {
   SalesDirectory,
@@ -33,13 +34,15 @@ export async function generateMetadata({
     .sort((a, b) => b.path.length - a.path.length)[0];
   return {
     title:
-      route === "/dashboard"
-        ? "Dashboard"
-        : route === "/reports"
-          ? "Reports"
-          : route === "/settings"
-            ? "Settings"
-            : config?.title || "Workspace",
+      route === "/account/security"
+        ? "Account security"
+        : route === "/dashboard"
+          ? "Dashboard"
+          : route === "/reports"
+            ? "Reports"
+            : route === "/settings"
+              ? "Settings"
+              : config?.title || "Workspace",
   };
 }
 export default async function Page({
@@ -74,6 +77,7 @@ export default async function Page({
         />
       );
   }
+  if (route === "/account/security") return <AccountSecurity />;
   if (route === "/sales/connections") return <Connections />;
   if (route === "/sales/leads") return <SalesDirectory kind="leads" />;
   if (route === "/sales/tasks") return <SalesDirectory kind="tasks" />;

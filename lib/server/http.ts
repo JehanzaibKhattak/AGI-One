@@ -6,6 +6,11 @@ export { HttpError } from "./errors";
 export async function requireSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) throw new HttpError(401, "Sign in to continue.");
+  if (!session.user.emailVerified)
+    throw new HttpError(
+      403,
+      "Verify your email address before accessing the workspace.",
+    );
   return session;
 }
 export async function requireMember(request: Request) {

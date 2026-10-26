@@ -12,14 +12,15 @@ Requires Node.js 24 and PostgreSQL 15 or newer.
 2. Run `npm ci`.
 3. Copy `.env.example` to `.env.local`. Set your database connection and application URL. Generate a secret with `openssl rand -base64 48`.
 4. Run `npm run db:migrate` to create Better Auth and AGI One tables.
-5. Run `npm run dev`, open the configured application URL, and create your account.
+5. Run `npm run dev`, open the configured application URL, and create your account. Verify your email using the private local preview described in [account security setup](docs/account-security.md), then sign in.
 6. Create a workspace, select its base currency, and add your first customer.
 
 The example database URL points to a local development database on port 55439. Replace it for your installation. Production must use a private database connection, HTTPS, a dedicated database role and a strong secret. Never commit `.env.local`.
 
 ## Accounts and teams
 
-- Better Auth manages passwords, database-backed sessions, HTTP-only cookies and database-backed authentication rate limits.
+- Better Auth manages passwords, verified email, password recovery, authenticator MFA, encrypted backup codes, database-backed sessions, HTTP-only cookies and database-backed authentication rate limits.
+- Every account must verify email before workspace access. Local setup uses private email previews; deployed environments require SMTP. Password reset revokes sessions and preserves MFA. Account security provides password changes and session management. See [setup and recovery limits](docs/account-security.md).
 - Protected workspace pages verify the server session and database membership.
 - Workspace reads and writes derive the workspace from the authenticated user. Client-supplied workspace IDs are never trusted.
 - Owners control settings and membership. Editor/viewer base roles can be refined with per-module view/create/edit/approve/export grants and branch scopes. Restrictions are enforced on reads, commands, searches and server exports.
@@ -75,4 +76,4 @@ Tests cover clean onboarding, persistent customer creation, quote-to-cash, recei
 
 Use your PostgreSQL provider's scheduled backups and point-in-time recovery. For self-hosted installations, schedule encrypted `pg_dump` backups outside the application, restrict access, and test restoring them into an isolated database. Workspace JSON exports are convenient data exports, not substitutes for database backups: they exclude accounts, membership, invitations and the separate audit-event table.
 
-Deployment, production database provisioning, email verification/recovery, monitoring, backup scheduling and recovery drills still need environment-specific setup. See [the release roadmap](docs/release-roadmap.md) before onboarding live clients.
+Deployment, production database provisioning, live SMTP deliverability, enterprise SSO, monitoring, backup scheduling and recovery drills still need environment-specific setup. See [the release roadmap](docs/release-roadmap.md) before onboarding live clients.

@@ -21,6 +21,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     "/sales/pipelines",
     "/sales/forecast",
     "/sales/connections",
+    "/account/security",
     "/crm",
     "/crm/overview",
     "/crm/organizations",

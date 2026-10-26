@@ -152,3 +152,28 @@ CREATE POLICY workspace_scope ON agi_connection_states USING(workspace_id=curren
 CREATE INDEX IF NOT EXISTS agi_sales_pipeline ON agi_records(workspace_id,(coalesce(data->>'pipelineId','default')),status) WHERE collection='opportunities';
 CREATE INDEX IF NOT EXISTS agi_sales_close_date ON agi_records(workspace_id,(data->>'closeDate')) WHERE collection='opportunities';
 CREATE INDEX IF NOT EXISTS agi_task_assignee ON agi_records(workspace_id,(data->>'assigneeId'),status) WHERE collection='tasks';
+
+-- Authentication changes must invalidate old sessions and pending challenges atomically.
+CREATE OR REPLACE FUNCTION agi_invalidate_account_access() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE account_user text;
+BEGIN
+  IF TG_TABLE_NAME='account' THEN
+    IF NEW.password IS NOT DISTINCT FROM OLD.password THEN RETURN NEW; END IF;
+    account_user := NEW."userId";
+  ELSE
+    IF NEW."twoFactorEnabled" IS NOT DISTINCT FROM OLD."twoFactorEnabled" THEN RETURN NEW; END IF;
+    account_user := NEW.id;
+  END IF;
+  DELETE FROM "session" WHERE "userId"=account_user;
+  WITH revoked AS (
+    DELETE FROM verification WHERE value=account_user
+      AND (identifier LIKE '2fa-%' OR identifier LIKE 'trust-device-%' OR identifier LIKE 'reset-password:%')
+    RETURNING identifier
+  ) DELETE FROM verification WHERE identifier IN (SELECT '2fa-attempts-'||identifier FROM revoked WHERE identifier LIKE '2fa-%');
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS agi_password_access_revocation ON account;
+CREATE TRIGGER agi_password_access_revocation AFTER UPDATE OF password ON account FOR EACH ROW EXECUTE FUNCTION agi_invalidate_account_access();
+DROP TRIGGER IF EXISTS agi_mfa_access_revocation ON "user";
+CREATE TRIGGER agi_mfa_access_revocation AFTER UPDATE OF "twoFactorEnabled" ON "user" FOR EACH ROW EXECUTE FUNCTION agi_invalidate_account_access();

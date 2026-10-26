@@ -120,6 +120,7 @@ const groups = [
       ["Users & roles", "/settings/users", UserCog],
       ["Activity logs", "/settings/audit-log", History],
       ["Settings", "/settings", Settings],
+      ["Account security", "/account/security", ShieldCheck],
     ],
   },
 ] as const;
@@ -166,13 +167,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     .filter((m) => path === m.path || path.startsWith(m.path + "/"))
     .sort((a, b) => b.path.length - a.path.length)[0];
   const title =
-    path === "/dashboard"
-      ? "Overview"
-      : path === "/reports"
-        ? "Reports"
-        : path === "/settings"
-          ? "Settings"
-          : current?.title || "Workspace";
+    path === "/account/security"
+      ? "Account security"
+      : path === "/dashboard"
+        ? "Overview"
+        : path === "/reports"
+          ? "Reports"
+          : path === "/settings"
+            ? "Settings"
+            : current?.title || "Workspace";
   const [results, setResults] = useState<
     { key: Collection; row: import("@/lib/constants/modules").DisplayRow }[]
   >([]);
